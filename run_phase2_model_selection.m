@@ -11,30 +11,59 @@
 % Date: 2025-05-15 (Updated with fscmrmr fix)
 
 %% 0. Initialization
-% ... (your existing setup) ...
 fprintf('PHASE 2: Model and Feature Selection - %s\n', string(datetime('now')));
 
-% +++ NEW: CHOOSE OUTLIER STRATEGY FOR THIS RUN +++
+% --- Define Paths (Simplified) ---
+projectRoot = pwd; % Assumes current working directory IS the project root.
+if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
+    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
+           'main project root directory before running. Current directory is: %s'], projectRoot);
+end
+
+srcPath       = fullfile(projectRoot, 'src');
+helperFunPath = fullfile(srcPath, 'helper_functions');
+if ~exist(helperFunPath, 'dir')
+    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
+end
+addpath(helperFunPath);
+
+% ***** THIS IS THE CRUCIAL ADDITION/CORRECTION *****
+dataPath      = fullfile(projectRoot, 'data'); % Define dataPath
+resultsPath   = fullfile(projectRoot, 'results', 'Phase2'); % Specific to Phase 2
+modelsPath    = fullfile(projectRoot, 'models', 'Phase2');   % Specific to Phase 2
+figuresPath   = fullfile(projectRoot, 'figures', 'Phase2'); % Specific to Phase 2
+% ***************************************************
+
+if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
+if ~exist(modelsPath, 'dir'), mkdir(modelsPath); end
+if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
+
+dateStrForFilenames = string(datetime('now','Format','yyyyMMdd')); % Consistent naming
+
+% +++ CHOOSE OUTLIER STRATEGY FOR THIS RUN +++
 % outlierStrategy = 'OR'; % Options: 'OR' or 'AND'
 outlierStrategy = 'AND'; % Or set this from a config file P.outlier_cleaning_for_phase2
-
 fprintf('--- Using outlier removal strategy: T2 %s Q ---\n', outlierStrategy);
 % ++++++++++++++++++++++++++++++++++++++++++++++++++
 
-% ... (paths setup) ...
-dateStr = string(datetime('now','Format','yyyyMMdd')); % Keep local dateStr for output naming
+% No need for 'dateStr' here if 'dateStrForFilenames' is used for outputs of this script.
+% If you used 'dateStr' previously in this script for output, you can keep it or switch to dateStrForFilenames.
+% dateStr = string(datetime('now','Format','yyyyMMdd')); % Original line from your script
 
 %% 1. Load Data
-% ...
+% ... (the rest of your script follows) ...
+fprintf('\n--- 1. Loading Data (Outlier Strategy: %s) ---\n', outlierStrategy);
+
 if strcmpi(outlierStrategy, 'OR')
     inputDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
 elseif strcmpi(outlierStrategy, 'AND')
-    inputDataFilePattern = '*_training_set_no_outliers_T2andQ.mat';
+    inputDataFilePattern = '*_training_set_no_outliers_T2andQ.mat'; % This should match the output of your consensus script
 else
     error('Invalid outlierStrategy specified. Choose "OR" or "AND".');
 end
 
-cleanedDataFiles = dir(fullfile(dataPath, inputDataFilePattern));
+% Line 37 where the error occurred:
+cleanedDataFiles = dir(fullfile(dataPath, inputDataFilePattern)); % Now dataPath is defined
 if isempty(cleanedDataFiles)
     error('No cleaned training set file found for strategy "%s" in %s matching pattern %s', ...
           outlierStrategy, dataPath, inputDataFilePattern);
