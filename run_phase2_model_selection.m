@@ -51,22 +51,20 @@ fprintf('--- Using outlier removal strategy: T2 %s Q ---\n', outlierStrategy);
 % dateStr = string(datetime('now','Format','yyyyMMdd')); % Original line from your script
 
 %% 1. Load Data
-% ... (the rest of your script follows) ...
 fprintf('\n--- 1. Loading Data (Outlier Strategy: %s) ---\n', outlierStrategy);
 
 if strcmpi(outlierStrategy, 'OR')
-    inputDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
+    inputDataFilePattern = '*_training_set_no_outliers_T2orQ.mat'; % Ensure this matches your OR strategy output
 elseif strcmpi(outlierStrategy, 'AND')
-    inputDataFilePattern = '*_training_set_no_outliers_T2andQ.mat'; % This should match the output of your consensus script
+    inputDataFilePattern = '*_training_set_no_outliers_T2andQ.mat'; % This matches the output of your consensus script
 else
     error('Invalid outlierStrategy specified. Choose "OR" or "AND".');
 end
 
-% Line 37 where the error occurred:
-cleanedDataFiles = dir(fullfile(dataPath, inputDataFilePattern)); % Now dataPath is defined
+cleanedDataFiles = dir(fullfile(dataPath, inputDataFilePattern));
 if isempty(cleanedDataFiles)
-    error('No cleaned training set file found for strategy "%s" in %s matching pattern %s', ...
-          outlierStrategy, dataPath, inputDataFilePattern);
+    error('No cleaned training set file found for strategy "%s" in %s matching pattern %s. Ensure the outlier removal script for this strategy has been run and saved files to %s.', ...
+          outlierStrategy, dataPath, inputDataFilePattern, dataPath);
 end
 [~,idxSortCleaned] = sort([cleanedDataFiles.datenum],'descend');
 inputDataFile = fullfile(dataPath, cleanedDataFiles(idxSortCleaned(1)).name);
@@ -74,25 +72,57 @@ fprintf('Loading cleaned training data (Strategy: %s) from: %s\n', outlierStrate
 
 try
     if strcmpi(outlierStrategy, 'OR')
+        % Adjust these variable names if your OR strategy script saves them differently
         loadedData = load(inputDataFile, ...
-                           'X_train_no_outliers_OR', 'y_train_numeric_no_outliers_OR', ...
+                           'X_train_no_outliers_OR', 'y_train_no_outliers_OR_num', ... % Assuming similar naming for OR
                            'Patient_ID_train_no_outliers_OR', 'wavenumbers_roi');
         X_train_full = loadedData.X_train_no_outliers_OR;
-        y_train_full = loadedData.y_train_numeric_no_outliers_OR; % Ensure this is numeric for CV
+        y_train_full = loadedData.y_train_no_outliers_OR_num; % Numeric labels
         probeIDs_train_full = loadedData.Patient_ID_train_no_outliers_OR;
-    else % AND strategy
+        
+    else % AND strategy (this is the one causing the error)
         loadedData = load(inputDataFile, ...
-                           'X_train_no_outliers_AND', 'y_train_numeric_no_outliers_AND', ...
+                           'X_train_no_outliers_AND', 'y_train_no_outliers_AND_num', ... % CORRECTED: Load 'y_train_no_outliers_AND_num'
                            'Patient_ID_train_no_outliers_AND', 'wavenumbers_roi');
         X_train_full = loadedData.X_train_no_outliers_AND;
-        y_train_full = loadedData.y_train_numeric_no_outliers_AND; % Ensure this is numeric
+        y_train_full = loadedData.y_train_no_outliers_AND_num; % CORRECTED: Assign from loaded 'y_train_no_outliers_AND_num'
         probeIDs_train_full = loadedData.Patient_ID_train_no_outliers_AND;
     end
     
-    wavenumbers_original = loadedData.wavenumbers_roi; % Common
-    % ... rest of your data loading/verification ...
+    % This variable is loaded within the if/else block now.
+    % If wavenumbers_roi is not found in loadedData (e.g. if you remove it from save in previous script)
+    % you might need a separate load or ensure it's always saved with the training sets.
+    % For now, assuming it's in loadedData as per your current structure.
+    if isfield(loadedData, 'wavenumbers_roi')
+        wavenumbers_original = loadedData.wavenumbers_roi;
+    else
+        error('wavenumbers_roi not found in the loaded data file: %s', inputDataFile);
+    end
+    
+    % Verification
+    if isempty(X_train_full) || isempty(y_train_full) || isempty(probeIDs_train_full)
+        error('One or more required datasets (X_train_full, y_train_full, probeIDs_train_full) are empty after loading from %s.', inputDataFile);
+    end
+    if ~isnumeric(y_train_full)
+        warning('y_train_full is not numeric after loading. Type is: %s. This might cause issues with cvpartition or classifiers.', class(y_train_full));
+        % Attempt conversion if it's categorical from an older save format, though current save should be numeric.
+        if iscategorical(y_train_full)
+             try
+                 y_train_full = double(string(y_train_full)); % Example conversion, adjust if needed based on actual categories
+                 fprintf('Attempted to convert categorical y_train_full to double.\n');
+             catch ME_conversion
+                 error('Failed to convert categorical y_train_full to numeric: %s', ME_conversion.message);
+             end
+        end
+    end
+    fprintf('Data loaded: %d spectra, %d features. %d unique probe IDs.\n', ...
+        size(X_train_full, 1), size(X_train_full, 2), length(unique(probeIDs_train_full)));
+
 catch ME
     fprintf('ERROR loading data from %s: %s\n', inputDataFile, ME.message);
+    disp('Please ensure the variable names in the .mat file match those being loaded.');
+    disp('Specifically, the error points to "y_train_numeric_no_outliers_AND".');
+    disp('The consensus outlier script saves numeric labels as "y_train_no_outliers_AND_num".');
     rethrow(ME);
 end
 
