@@ -48,7 +48,7 @@ fprintf('--- Using outlier removal strategy: T2 %s Q ---\n', outlierStrategy);
 
 % No need for 'dateStr' here if 'dateStrForFilenames' is used for outputs of this script.
 % If you used 'dateStr' previously in this script for output, you can keep it or switch to dateStrForFilenames.
-% dateStr = string(datetime('now','Format','yyyyMMdd')); % Original line from your script
+dateStr = string(datetime('now','Format','yyyyMMdd')); % Original line from your script
 
 %% 1. Load Data
 fprintf('\n--- 1. Loading Data (Outlier Strategy: %s) ---\n', outlierStrategy);
