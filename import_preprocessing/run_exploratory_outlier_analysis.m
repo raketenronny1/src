@@ -285,6 +285,338 @@ if isvalid(fig6) && isgraphics(fig6,'figure')
 else, warning('Plot 6 figure handle (fig6) was invalid BEFORE attempting to save.');end
 fprintf('All requested diagnostic visualizations generated.\n');
 
+%% --- PLOT 7: Patient-wise Outlier Spectra Overview (Tiled Layout) ---
+fprintf('\nGenerating Plot 7: Patient-wise Outlier Spectra Overview...\n');
+
+% For this plot, we want to show which patients have *any* flagged spectrum.
+% We can use 'is_OR_outlier' (flag_T2 | flag_Q) for selecting patients to display,
+% as this gives the broadest view of potential issues.
+% Within each patient's plot, we will still distinguish actual T2/Q flagged spectra.
+
+% Ensure Patient_ID, X, y_cat, wavenumbers_roi, and outlier flags are available from earlier sections.
+unique_pids_plot7 = unique(Patient_ID); % Get unique Patient/Diss_IDs from the full X_train
+patients_to_display_info = {};
+
+for i_pat = 1:length(unique_pids_plot7)
+    current_pid_val = unique_pids_plot7{i_pat};
+    % Find all global indices in X that belong to this patient/probe
+    patient_global_indices = find(strcmp(Patient_ID, current_pid_val));
+    
+    if isempty(patient_global_indices)
+        continue;
+    end
+    
+    % Check if this patient has any spectra flagged by the OR condition
+    patient_has_any_flagged_spectrum = any(is_OR_outlier(patient_global_indices));
+    
+    if patient_has_any_flagged_spectrum
+        num_OR_flagged_spectra_for_patient = sum(is_OR_outlier(patient_global_indices));
+        patient_who_grade_val = y_cat(patient_global_indices(1)); % Get WHO grade from the first spectrum of this patient
+        patients_to_display_info{end+1,1} = {current_pid_val, num_OR_flagged_spectra_for_patient, patient_who_grade_val};
+    end
+end
+
+num_patients_to_plot = size(patients_to_display_info, 1);
+
+if num_patients_to_plot == 0
+    fprintf('No patients with T2 or Q flagged outliers found to display in patient-wise overview.\n');
+else
+    fprintf('%d patients with at least one T2 or Q flagged spectrum will be displayed.\n', num_patients_to_plot);
+    
+    % Determine layout (e.g., aim for a roughly square or 2-column layout if many patients)
+    % Your example image is 5 rows, 6 columns (30 plots)
+    % The prompt mentioned 44 training probes. A 7x4 or similar might be needed if all have outliers.
+    % Let's use a flexible layout, e.g., aiming for max 4-5 columns.
+    
+    ncols_layout_p7 = 6; % As in your example image
+    nrows_layout_p7 = ceil(num_patients_to_plot / ncols_layout_p7);
+    if nrows_layout_p7 == 0 && num_patients_to_plot > 0, nrows_layout_p7 = 1; end % Handle if less than ncols_layout_p7 patients
+
+    if num_patients_to_plot > (nrows_layout_p7 * ncols_layout_p7)
+        fprintf('Warning: Displaying first %d patients due to layout constraints.\n', nrows_layout_p7 * ncols_layout_p7);
+    end
+
+    fig7_handle = figure('Name', 'Patienten-Ausreißer Übersicht (Trainingsdaten)');
+    % Adjust figure size based on layout
+    fig_width_p7 = min(1800, ncols_layout_p7 * 250 + 100); 
+    fig_height_p7 = min(1000, nrows_layout_p7 * 180 + 150);
+    fig7_handle.Position = [30, 30, fig_width_p7, fig_height_p7];
+    
+    tl_p7 = tiledlayout(nrows_layout_p7, ncols_layout_p7, 'TileSpacing', 'compact', 'Padding', 'compact');
+    title_str_p7 = sprintf('Übersicht: Ausreißer-Spektren pro Patient (Trainingsdaten) - %s', P.datePrefix);
+    try
+        title(tl_p7, title_str_p7, 'FontSize', P.plotFontSize+2, 'FontWeight', 'normal', 'Interpreter','none');
+    catch
+        title(tl_p7, 'Patient Outlier Overview', 'FontSize', P.plotFontSize+2, 'FontWeight', 'normal'); % Fallback title
+    end
+
+    % Define colors and styles for this plot consistently
+    color_outlier_highlight_p7 = P.colorBothOutlierFlag; % Red for any flagged outlier in this plot
+    alpha_non_outlier_p7 = 0.3;
+    alpha_outlier_p7 = 0.6; % Make outliers slightly more prominent
+    linewidth_non_outlier_p7 = 0.5;
+    linewidth_outlier_p7 = 0.8;
+    
+    % Legend item handles (create dummy plots for legend after the loop)
+    h_legend_items_p7 = gobjects(3,1);
+    legend_item_plotted_p7 = [false, false, false]; % [WHO1-Normal, WHO3-Normal, Outlier]
+
+    for i_plot = 1:min(num_patients_to_plot, nrows_layout_p7 * ncols_layout_p7)
+        current_patient_info = patients_to_display_info{i_plot};
+        current_pid = current_patient_info{1};
+        num_flagged_in_patient = current_patient_info{2};
+        patient_grade = current_patient_info{3};
+        
+        ax_p7 = nexttile(tl_p7);
+        hold(ax_p7, 'on');
+        box(ax_p7, 'on');
+
+        % Get all spectra for this patient/probe
+        patient_global_indices = find(strcmp(Patient_ID, current_pid));
+        patient_all_spectra = X(patient_global_indices, :);
+        
+        % Get the outlier flags for this patient's spectra (using OR condition for highlighting)
+        patient_or_outlier_flags = is_OR_outlier(patient_global_indices);
+        
+        patient_non_outlier_spectra = patient_all_spectra(~patient_or_outlier_flags, :);
+        patient_outlier_spectra = patient_all_spectra(patient_or_outlier_flags, :);
+        
+        % Plot non-outlier spectra
+        color_normal_spectra = ([0.6 0.6 0.6]); % Default gray for unassigned grades
+        legend_idx_normal = 0;
+        if patient_grade == 'WHO-1'
+            color_normal_spectra = P.colorWHO1; legend_idx_normal = 1;
+        elseif patient_grade == 'WHO-3'
+            color_normal_spectra = P.colorWHO3; legend_idx_normal = 2;
+        end
+        
+        if ~isempty(patient_non_outlier_spectra)
+            plot(ax_p7, wavenumbers_roi, patient_non_outlier_spectra', ...
+                 'Color', [color_normal_spectra, alpha_non_outlier_p7], ...
+                 'LineWidth', linewidth_non_outlier_p7, 'HandleVisibility','off');
+            if legend_idx_normal > 0 && ~legend_item_plotted_p7(legend_idx_normal)
+                % For legend entry only, plot one invisible line
+                h_legend_items_p7(legend_idx_normal) = plot(ax_p7, NaN, NaN, 'Color', color_normal_spectra, 'LineWidth', 1.5);
+                legend_item_plotted_p7(legend_idx_normal) = true;
+            end
+        end
+        
+        % Plot OR-flagged outlier spectra in distinct color
+        if ~isempty(patient_outlier_spectra)
+            plot(ax_p7, wavenumbers_roi, patient_outlier_spectra', ...
+                 'Color', [color_outlier_highlight_p7, alpha_outlier_p7], ...
+                 'LineWidth', linewidth_outlier_p7, 'HandleVisibility','off');
+            if ~legend_item_plotted_p7(3)
+                h_legend_items_p7(3) = plot(ax_p7, NaN, NaN, 'Color', color_outlier_highlight_p7, 'LineWidth', 1.5);
+                legend_item_plotted_p7(3) = true;
+            end
+        end
+        
+        hold(ax_p7, 'off');
+        xlim(ax_p7, P.plotXLim);
+        % Y-limits can be auto or set to a common scale if preferred after inspection
+        ylim(ax_p7, 'auto'); 
+        
+        set(ax_p7, 'XTickMode', 'auto', 'YTickMode', 'auto');
+        ax_p7.XAxis.FontSize = P.plotFontSize - 3; % Smaller tick labels
+        ax_p7.YAxis.FontSize = P.plotFontSize - 3;
+        ax_p7.XDir = 'reverse';
+        grid(ax_p7, 'off'); % Grid off as in example
+        
+        title_txt = sprintf('%s (%s, %d Ausr.)', current_pid, char(patient_grade), num_flagged_in_patient);
+        title(ax_p7, title_txt, 'FontSize', P.plotFontSize - 2, 'FontWeight', 'normal', 'Interpreter', 'none');
+        
+        % Manage axis labels for edges of the tiled layout
+        current_tile_info_p7 = get(ax_p7,'Layout');
+        current_col_p7 = mod(current_tile_info_p7.Tile-1, ncols_layout_p7) + 1;
+        current_row_p7 = ceil(current_tile_info_p7.Tile / ncols_layout_p7);
+        
+        if current_col_p7 == 1 % Leftmost column
+            ylabel(ax_p7, 'Abs.', 'FontSize', P.plotFontSize-2);
+        else
+            set(ax_p7, 'YTickLabel', []);
+        end
+        if current_row_p7 == nrows_layout_p7 % Bottommost row
+            xlabel(ax_p7, 'Wellenzahl (cm^{-1})', 'FontSize', P.plotFontSize-2);
+        else
+            set(ax_p7, 'XTickLabel', []);
+        end
+    end
+    
+    % Add a single legend for the entire tiled layout
+    legend_texts_final_p7 = {};
+    valid_handles_p7 = [];
+    if legend_item_plotted_p7(1), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(1)]; legend_texts_final_p7{end+1} = 'Inlier WHO-1'; end
+    if legend_item_plotted_p7(2), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(2)]; legend_texts_final_p7{end+1} = 'Inlier WHO-3'; end
+    if legend_item_plotted_p7(3), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(3)]; legend_texts_final_p7{end+1} = 'Ausreißer (T2 oder Q)'; end
+    
+    if ~isempty(valid_handles_p7)
+        lgd_p7 = legend(valid_handles_p7, legend_texts_final_p7, 'FontSize', P.plotFontSize-1, 'Orientation', 'horizontal');
+        lgd_p7.Layout.Tile = 'South'; % Place legend below all tiles
+    end
+
+    % Save the figure
+    figName_p7_tiff = fullfile(figuresDir, sprintf('%s_Vis7_PatientWise_OutlierOverview.tiff', P.datePrefix));
+    figName_p7_fig  = fullfile(figuresDir, sprintf('%s_Vis7_PatientWise_OutlierOverview.fig', P.datePrefix));
+    try
+        exportgraphics(fig7_handle, figName_p7_tiff, 'Resolution', 300);
+        savefig(fig7_handle, figName_p7_fig);
+        fprintf('Plot 7 (Patient-wise Outlier Overview) saved.\n');
+    catch ME_save_p7
+        warning('Could not save Plot 7: %s', ME_save_p7.message);
+    end
+end
+
+
+% Insert this at the end of Section 3 in run_exploratory_outlier_analysis.m
+% (After existing Plot 1 through Plot 7, or adjust numbering)
+
+%% --- PLOT 8: Comprehensive Patient-wise Spectra Overview (11x4 Grid) ---
+fprintf('\nGenerating Plot 8: Comprehensive Patient-wise Spectra Overview (11x4 Grid)...\n');
+
+% Get unique patient/probe IDs from the full training set (associated with X)
+unique_patient_ids_plot8 = unique(Patient_ID, 'stable'); % 'stable' to keep original order as much as possible
+num_total_patients_in_train = length(unique_patient_ids_plot8);
+
+if num_total_patients_in_train == 0
+    fprintf('No patient/probe IDs found. Skipping Plot 8.\n');
+else
+    fprintf('Preparing to plot all %d patient/probes from the training set.\n', num_total_patients_in_train);
+
+    nrows_layout_p8 = 11;
+    ncols_layout_p8 = 4;
+    
+    fig8_handle = figure('Name', 'Alle Trainingsproben: Spektren mit Konsensus-Ausreißern');
+    % Adjust figure size: make it large enough for 11x4
+    fig_width_p8 = min(1800, ncols_layout_p8 * 300 + 100); % Wider subplots
+    fig_height_p8 = min(1600, nrows_layout_p8 * 150 + 150); % Taller overall for 11 rows
+    fig8_handle.Position = [10, 10, fig_width_p8, fig_height_p8]; % Start near top-left, make it large
+    
+    tl_p8 = tiledlayout(nrows_layout_p8, ncols_layout_p8, 'TileSpacing', 'compact', 'Padding', 'compact');
+    title_str_p8 = sprintf('Alle Trainingsproben: Spektren mit Konsensus-Ausreißern (Rot) - %s', P.datePrefix);
+    try
+        title(tl_p8, title_str_p8, 'FontSize', P.plotFontSize+4, 'FontWeight', 'bold', 'Interpreter','none');
+    catch
+        title(tl_p8, 'All Training Probes: Spectra with Consensus Outliers (Red)', 'FontSize', P.plotFontSize+4, 'FontWeight', 'bold'); % Fallback
+    end
+
+    % Define colors and styles for this plot
+    color_consensus_outlier_p8 = P.colorBothOutlierFlag; % Red for T2&Q outliers
+    alpha_non_outlier_p8 = 0.3;
+    alpha_outlier_p8 = 0.65; 
+    linewidth_non_outlier_p8 = 0.5;
+    linewidth_outlier_p8 = 0.8;
+    
+    % Legend item handles (create dummy plots for legend after the loop)
+    h_legend_items_p8 = gobjects(3,1);
+    legend_item_plotted_p8 = [false, false, false]; % [WHO1-Normal, WHO3-Normal, Consensus Outlier]
+
+    for i_plot_pat = 1:num_total_patients_in_train
+        if i_plot_pat > (nrows_layout_p8 * ncols_layout_p8)
+            fprintf('Warning: More patients (%d) than available tiles (%d). Plotting first %d.\n', ...
+                num_total_patients_in_train, nrows_layout_p8 * ncols_layout_p8, nrows_layout_p8 * ncols_layout_p8);
+            break;
+        end
+        
+        current_pid_val = unique_patient_ids_plot8{i_plot_pat};
+        
+        ax_p8 = nexttile(tl_p8);
+        hold(ax_p8, 'on');
+        box(ax_p8, 'on');
+
+        % Get all spectra and outlier flags for this patient/probe
+        patient_global_indices = find(strcmp(Patient_ID, current_pid_val));
+        patient_all_spectra_this_probe = X(patient_global_indices, :);
+        patient_consensus_outlier_flags = is_T2_and_Q(patient_global_indices); % Use the T2&Q flag
+        
+        patient_who_grade_val = y_cat(patient_global_indices(1)); % Grade for this patient/probe
+        num_consensus_outliers_this_probe = sum(patient_consensus_outlier_flags);
+        
+        patient_non_outlier_spectra = patient_all_spectra_this_probe(~patient_consensus_outlier_flags, :);
+        patient_consensus_outlier_spectra = patient_all_spectra_this_probe(patient_consensus_outlier_flags, :);
+        
+        % Plot non-outlier spectra (colored by WHO grade)
+        color_normal_spectra_p8 = ([0.6 0.6 0.6]); % Default gray
+        legend_idx_normal_p8 = 0;
+        if patient_who_grade_val == 'WHO-1'
+            color_normal_spectra_p8 = P.colorWHO1; legend_idx_normal_p8 = 1;
+        elseif patient_who_grade_val == 'WHO-3'
+            color_normal_spectra_p8 = P.colorWHO3; legend_idx_normal_p8 = 2;
+        end
+        
+        if ~isempty(patient_non_outlier_spectra)
+            plot(ax_p8, wavenumbers_roi, patient_non_outlier_spectra', ...
+                 'Color', [color_normal_spectra_p8, alpha_non_outlier_p8], ...
+                 'LineWidth', linewidth_non_outlier_p8, 'HandleVisibility','off');
+            if legend_idx_normal_p8 > 0 && ~legend_item_plotted_p8(legend_idx_normal_p8)
+                h_legend_items_p8(legend_idx_normal_p8) = plot(ax_p8, NaN, NaN, 'Color', color_normal_spectra_p8, 'LineWidth', 1.5);
+                legend_item_plotted_p8(legend_idx_normal_p8) = true;
+            end
+        end
+        
+        % Plot consensus outlier spectra in the defined outlier color
+        if ~isempty(patient_consensus_outlier_spectra)
+            plot(ax_p8, wavenumbers_roi, patient_consensus_outlier_spectra', ...
+                 'Color', [color_consensus_outlier_p8, alpha_outlier_p8], ...
+                 'LineWidth', linewidth_outlier_p8, 'HandleVisibility','off');
+            if ~legend_item_plotted_p8(3)
+                 h_legend_items_p8(3) = plot(ax_p8, NaN, NaN, 'Color', color_consensus_outlier_p8, 'LineWidth', 1.5);
+                 legend_item_plotted_p8(3) = true;
+            end
+        end
+        
+        hold(ax_p8, 'off');
+        xlim(ax_p8, P.plotXLim);
+        ylim(ax_p8, 'auto'); % Auto Y-limits per subplot can be better for individual inspection
+        
+        set(ax_p8, 'XTickMode', 'auto', 'YTickMode', 'auto');
+        ax_p8.XAxis.FontSize = P.plotFontSize - 4; % Even smaller for dense plots
+        ax_p8.YAxis.FontSize = P.plotFontSize - 4;
+        ax_p8.XDir = 'reverse';
+        grid(ax_p8, 'off');
+        
+        title_txt_p8 = sprintf('%s (%s, %d Ausr.)', current_pid_val, char(patient_who_grade_val), num_consensus_outliers_this_probe);
+        title(ax_p8, title_txt_p8, 'FontSize', P.plotFontSize - 3, 'FontWeight', 'normal', 'Interpreter', 'none');
+        
+        % Manage axis labels for edges
+        current_tile_info_p8 = get(ax_p8,'Layout');
+        current_col_p8 = mod(current_tile_info_p8.Tile-1, ncols_layout_p8) + 1;
+        current_row_p8 = ceil(current_tile_info_p8.Tile / ncols_layout_p8);
+        
+        if current_col_p8 == 1, ylabel(ax_p8, 'Abs.', 'FontSize', P.plotFontSize-3); else set(ax_p8, 'YTickLabel',[]); end
+        if current_row_p8 == nrows_layout_p8, xlabel(ax_p8, 'Wellenzahl (cm^{-1})', 'FontSize', P.plotFontSize-3); else set(ax_p8, 'XTickLabel',[]); end
+    end
+    
+    % Fill any remaining empty tiles if num_total_patients_in_train < (nrows_layout_p8 * ncols_layout_p8)
+    for i_empty_tile = (num_total_patients_in_train + 1):(nrows_layout_p8 * ncols_layout_p8)
+        ax_empty = nexttile(tl_p8, i_empty_tile);
+        set(ax_empty, 'Visible', 'off'); % Hide empty tiles
+    end
+
+    % Add a single legend for the entire tiled layout
+    legend_texts_final_p8 = {};
+    valid_handles_p8 = [];
+    if legend_item_plotted_p8(1), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(1)]; legend_texts_final_p8{end+1} = 'Inlier WHO-1'; end
+    if legend_item_plotted_p8(2), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(2)]; legend_texts_final_p8{end+1} = 'Inlier WHO-3'; end
+    if legend_item_plotted_p8(3), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(3)]; legend_texts_final_p8{end+1} = 'Konsensus Ausreißer (T2&Q)'; end
+    
+    if ~isempty(valid_handles_p8)
+        lgd_p8 = legend(valid_handles_p8, legend_texts_final_p8, 'FontSize', P.plotFontSize-1, 'Orientation', 'horizontal');
+        lgd_p8.Layout.Tile = 'South'; % Place legend below all tiles
+    end
+
+    % Save the figure
+    figName_p8_tiff = fullfile(figuresDir, sprintf('%s_Vis8_AllPatientSpectra_WithConsensusOutliers.tiff', P.datePrefix));
+    figName_p8_fig  = fullfile(figuresDir, sprintf('%s_Vis8_AllPatientSpectra_WithConsensusOutliers.fig', P.datePrefix));
+    try
+        exportgraphics(fig8_handle, figName_p8_tiff, 'Resolution', 300); % Use 300 dpi for potentially dense plot
+        savefig(fig8_handle, figName_p8_fig);
+        fprintf('Plot 8 (All Patient Spectra Overview) saved.\n');
+    catch ME_save_p8
+        warning('Could not save Plot 8: %s', ME_save_p8.message);
+    end
+end
+
 
 %% --- 4. Save Exploratory Analysis Data ---
 fprintf('\n--- 4. Saving Exploratory Analysis Data ---\n');
