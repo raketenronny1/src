@@ -35,8 +35,8 @@ if ~isfolder(resultsDir); mkdir(resultsDir); end
 if ~isfolder(figuresDir); mkdir(figuresDir); end
 
 % --- Parameters ---
-P.alpha_significance = 0.01;
-P.variance_to_explain_for_PCA_model = 0.99; % For k_model determination
+P.alpha_significance = 0.05;
+P.variance_to_explain_for_PCA_model = 0.95; % For k_model determination
 P.datePrefix = string(datetime('now','Format','yyyyMMdd'));
 
 % --- Plotting Defaults ---
@@ -381,6 +381,110 @@ hold(ax_t2_and_q, 'off');
 exportgraphics(fig_outlier_spectra_cats, fullfile(figuresDir, sprintf('%s_Exploratory_OutlierCategory_Spectra.tiff', P.datePrefix)), 'Resolution', 300);
 savefig(fig_outlier_spectra_cats, fullfile(figuresDir, sprintf('%s_Exploratory_OutlierCategory_Spectra.fig', P.datePrefix)));
 fprintf('Plot of spectra by outlier category saved.\n');
+
+% Plot 3.9: Spectra Flagged by Different Alpha Levels (using OR logic)
+fprintf('Generating plot of spectra sensitive to alpha level changes...\n');
+
+P.alpha_primary = 0.01; % Your current, stricter alpha
+P.alpha_lenient = 0.05; % A more lenient alpha to compare against
+
+% --- Recalculate Thresholds for Lenient Alpha ---
+% Variables T2_values_explore, Q_values_explore, k_model_explore, n_samples_explore,
+% latent_explore, num_total_pcs_latent, theta1, theta2, theta3, h0 are assumed 
+% to be available from Section 2 calculations.
+
+T2_threshold_lenient = NaN;
+Q_threshold_lenient = NaN;
+
+if n_samples_explore > k_model_explore && k_model_explore > 0
+    T2_threshold_lenient = ((k_model_explore * (n_samples_explore - 1)) / (n_samples_explore - k_model_explore)) ...
+        * finv(1 - P.alpha_lenient, k_model_explore, n_samples_explore - k_model_explore);
+else
+    T2_threshold_lenient = chi2inv(1 - P.alpha_lenient, k_model_explore);
+end
+
+if k_model_explore < num_total_pcs_latent && theta1 > eps && theta2 > eps % Check theta1,theta2 for safety
+    ca_lenient = norminv(1 - P.alpha_lenient);
+    val_in_bracket_lenient = ca_lenient * sqrt(2*theta2*h0^2)/theta1 + 1 + theta2*h0*(h0-1)/(theta1^2);
+    if val_in_bracket_lenient > 0 && h0 > eps % ensure h0 is positive
+        Q_threshold_lenient = theta1 * (val_in_bracket_lenient)^(1/h0);
+    end
+end
+if isnan(Q_threshold_lenient) || isinf(Q_threshold_lenient)
+    Q_threshold_lenient = prctile(Q_values_explore, (1-P.alpha_lenient)*100);
+end
+
+fprintf('  Primary Alpha (%.3f): T2_thresh=%.4f, Q_thresh=%.4g\n', P.alpha_primary, T2_threshold_explore, Q_threshold_explore);
+fprintf('  Lenient Alpha (%.3f): T2_thresh=%.4f, Q_thresh=%.4g\n', P.alpha_lenient, T2_threshold_lenient, Q_threshold_lenient);
+
+% --- Identify Outlier Flags for Both Alphas (using OR logic) ---
+flag_T2_primary = (T2_values_explore > T2_threshold_explore);
+flag_Q_primary  = (Q_values_explore > Q_threshold_explore);
+flag_OR_outlier_primary = flag_T2_primary | flag_Q_primary;
+
+flag_T2_lenient = (T2_values_explore > T2_threshold_lenient);
+flag_Q_lenient  = (Q_values_explore > Q_threshold_lenient);
+flag_OR_outlier_lenient = flag_T2_lenient | flag_Q_lenient;
+
+% Spectra that are outliers with lenient alpha BUT NOT with primary alpha
+alpha_sensitive_outliers_flag = flag_OR_outlier_lenient & ~flag_OR_outlier_primary;
+num_alpha_sensitive = sum(alpha_sensitive_outliers_flag);
+
+fprintf('  Number of spectra flagged by OR logic with lenient alpha (%.3f): %d\n', P.alpha_lenient, sum(flag_OR_outlier_lenient));
+fprintf('  Number of spectra flagged by OR logic with primary alpha (%.3f): %d\n', P.alpha_primary, sum(flag_OR_outlier_primary));
+fprintf('  Number of "alpha-sensitive" spectra (outlier at %.3f but not at %.3f): %d\n', P.alpha_lenient, P.alpha_primary, num_alpha_sensitive);
+
+% --- Plot these alpha-sensitive spectra ---
+fig_alpha_sens = figure('Name', sprintf('Exploratory: Alpha-Sensitive Outlier Spectra (%.2f vs %.2f)', P.alpha_lenient, P.alpha_primary));
+fig_alpha_sens.Position = [150 150 800 600];
+
+if num_alpha_sensitive > 0
+    spectra_alpha_sensitive = X_train_explore(alpha_sensitive_outliers_flag, :);
+    
+    % Get corresponding WHO grades for coloring
+    y_numeric_alpha_sensitive = y_train_numeric_explore(alpha_sensitive_outliers_flag);
+    
+    hold on;
+    % Plot WHO-1 alpha-sensitive outliers
+    idx_who1_sens = (y_numeric_alpha_sensitive == 1);
+    if any(idx_who1_sens)
+        plot(wavenumbers_roi, spectra_alpha_sensitive(idx_who1_sens, :)', 'Color', [P.colorWHO1, 0.3]);
+        % Plot one non-transparent for legend
+        h_sens1 = plot(wavenumbers_roi, spectra_alpha_sensitive(find(idx_who1_sens,1), :), 'Color', P.colorWHO1, 'LineWidth', 1.5, 'DisplayName', sprintf('WHO-1 (Sensitive, n=%d)', sum(idx_who1_sens)));
+    end
+    
+    % Plot WHO-3 alpha-sensitive outliers
+    idx_who3_sens = (y_numeric_alpha_sensitive == 3);
+    if any(idx_who3_sens)
+        plot(wavenumbers_roi, spectra_alpha_sensitive(idx_who3_sens, :)', 'Color', [P.colorWHO3, 0.3]);
+        h_sens3 = plot(wavenumbers_roi, spectra_alpha_sensitive(find(idx_who3_sens,1), :), 'Color', P.colorWHO3, 'LineWidth', 1.5, 'DisplayName', sprintf('WHO-3 (Sensitive, n=%d)', sum(idx_who3_sens)));
+    end
+    hold off;
+    
+    title(sprintf('Spectra Flagged by OR Logic at alpha=%.2f but NOT at alpha=%.2f (n=%d)', P.alpha_lenient, P.alpha_primary, num_alpha_sensitive),'FontWeight','normal');
+    xlabel(P.plotXLabel);
+    ylabel(P.plotYLabelAbsorption);
+    set(gca, 'XDir','reverse', 'XLim', P.plotXLim, 'FontSize', P.plotFontSize);
+    grid on;
+    
+    legend_handles_alpha_sens = [];
+    if any(idx_who1_sens) && exist('h_sens1','var'), legend_handles_alpha_sens = [legend_handles_alpha_sens, h_sens1]; end
+    if any(idx_who3_sens) && exist('h_sens3','var'), legend_handles_alpha_sens = [legend_handles_alpha_sens, h_sens3]; end
+    if ~isempty(legend_handles_alpha_sens)
+        legend(legend_handles_alpha_sens, 'Location', 'best');
+    end
+    
+else
+    text(0.5, 0.5, sprintf('No spectra uniquely flagged by alpha=%.2f vs. alpha=%.2f', P.alpha_lenient, P.alpha_primary), 'Parent', gca, 'HorizontalAlignment','center');
+    title(sprintf('No Alpha-Sensitive Spectra Found (%.2f vs %.2f)', P.alpha_lenient, P.alpha_primary),'FontWeight','normal');
+end
+
+exportgraphics(fig_alpha_sens, fullfile(figuresDir, sprintf('%s_Exploratory_AlphaSensitive_Spectra_%.2fvs%.2f.tiff', P.datePrefix, P.alpha_lenient, P.alpha_primary)), 'Resolution', 300);
+savefig(fig_alpha_sens, fullfile(figuresDir, sprintf('%s_Exploratory_AlphaSensitive_Spectra_%.2fvs%.2f.fig', P.datePrefix, P.alpha_lenient, P.alpha_primary)));
+fprintf('Plot of alpha-sensitive spectra saved.\n');
+
+
+
 
 fprintf('Diagnostic visualizations generated and saved.\n');
 fprintf('Please review figures in: %s\n', figuresDir);
