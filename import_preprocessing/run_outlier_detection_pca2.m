@@ -31,8 +31,7 @@ alpha = 0.01; % Signifikanzniveau für Hotelling T2 und Q-Statistic Schwellenwer
 varianceToExplainForT2 = 0.95; % PCA Varianz für T2 Berechnung (definiert k_model)
 
 % Dateinamen-Präfix (aktuelles Datum Ihrer letzten Anfrage)
-datePrefix = '20250514'; 
-% Alternativ dynamisch: datePrefix = string(datetime('now','Format','yyyyMMdd'));
+datePrefix = string(datetime('now','Format','yyyyMMdd'));
 
 disp('Setup completed.');
 
@@ -271,55 +270,61 @@ if isnan(Q_threshold) || isinf(Q_threshold)
 end
 
 
-%% --- 8. Identify Outliers (based on T² and Q) ---
-disp('8. Identifying outliers based on T2 and Q...');
-outlier_T2_logical = T2_values > T2_threshold;
-outlier_Q_logical = Q_values > Q_threshold;
+%% --- 8. Identify Outliers (for BOTH strategies) ---
+disp('8. Identifying outliers for both "OR" and "AND" strategies...');
+outlier_T2_logical = (T2_values > T2_threshold);
+outlier_Q_logical  = (Q_values > Q_threshold);
 
-% Kombinierte Ausreißer: Jeder, der mindestens einen Schwellenwert überschreitet
-outlier_indices_logical = outlier_T2_logical | outlier_Q_logical;
+% Strategy 1: T2 OR Q (Original strategy)
+outlier_indices_logical_OR = outlier_T2_logical | outlier_Q_logical;
+num_outliers_OR = sum(outlier_indices_logical_OR);
+outlier_indices_numeric_OR = find(outlier_indices_logical_OR);
 
-num_outliers = sum(outlier_indices_logical);
+% Strategy 2: T2 AND Q (Consensus strategy)
+outlier_indices_logical_AND = outlier_T2_logical & outlier_Q_logical;
+num_outliers_AND = sum(outlier_indices_logical_AND);
+outlier_indices_numeric_AND = find(outlier_indices_logical_AND);
+
+disp([num2str(num_outliers_OR) ' total outliers identified by "T2 OR Q" strategy.']);
+if num_outliers_OR > 0
+    % fprintf('   Global indices (OR): '); disp(outlier_indices_numeric_OR'); % Can be verbose
+    fprintf('   Patient IDs with "OR" outliers: '); disp(unique(Patient_ID_train(outlier_indices_logical_OR))');
+end
+
+disp([num2str(num_outliers_AND) ' total consensus outliers identified by "T2 AND Q" strategy.']);
+if num_outliers_AND > 0
+    % fprintf('   Global indices (AND): '); disp(outlier_indices_numeric_AND');
+    fprintf('   Patient IDs with "AND" (consensus) outliers: '); disp(unique(Patient_ID_train(outlier_indices_logical_AND))');
+end
+
+% For detailed breakdown in T2vsQ plot and summary tables
 num_outliers_T2_only = sum(outlier_T2_logical & ~outlier_Q_logical);
 num_outliers_Q_only = sum(~outlier_T2_logical & outlier_Q_logical);
-num_outliers_Both_T2_Q = sum(outlier_T2_logical & outlier_Q_logical);
+% num_outliers_Both_T2_Q is the same as num_outliers_AND
 
-disp([num2str(num_outliers) ' total outliers identified.']);
-disp(['   - T2 only: ' num2str(num_outliers_T2_only)]);
-disp(['   - Q only: ' num2str(num_outliers_Q_only)]);
-disp(['   - Both T2 & Q: ' num2str(num_outliers_Both_T2_Q)]);
-
-outlier_indices_numeric = find(outlier_indices_logical);
-
-if num_outliers > 0
-    disp('Global indices of identified outliers (relative to X_train):'); disp(outlier_indices_numeric');
-    Patient_ID_outliers = Patient_ID_train(outlier_indices_logical);
-    disp('Patient IDs of identified outliers:'); disp(unique(Patient_ID_outliers)'); 
-else
-    disp('No outliers identified in X_train according to T2 and Q thresholds.');
-end
+fprintf('   Breakdown: T2-only: %d, Q-only: %d, Both T2&Q (Consensus): %d\n', ...
+    num_outliers_T2_only, num_outliers_Q_only, num_outliers_AND);
 
 %% --- 9. Visualize Results ---
 disp('9. Visualizing results...');
 
-% Plot 1: Hotelling's T-Squared Values
-figT2Individual = figure('Name', 'Hotelling T2 Outlier Detection', 'Position', [100, 100, 900, 400]); % Korrigierter Variablenname
+% Plot 1: Hotelling's T-Squared Values (This plot is about T2_values themselves, so it's fine)
+figT2Individual = figure('Name', 'Hotelling T2 Outlier Detection', 'Position', [100, 100, 900, 400]);
 plot(1:length(T2_values), T2_values, 'ob', 'MarkerSize', 4, 'DisplayName', 'T2 Werte'); hold on;
-plot(find(outlier_T2_logical), T2_values(outlier_T2_logical), 'x', 'Color', colorOutlierHighlight, 'MarkerSize', 8, 'LineWidth', 1.5, 'DisplayName', 'T2 Ausreißer');
+plot(find(outlier_T2_logical), T2_values(outlier_T2_logical), 'x', 'Color', colorOutlierHighlight, 'MarkerSize', 8, 'LineWidth', 1.5, 'DisplayName', 'T2 Ausreißer'); % Shows T2-flagged
 yline(T2_threshold, '--r', ['T2 Schwelle (' num2str((1-alpha)*100, '%.1f') '%)'], 'LineWidth', 1.5);
 hold off; xlabel('Probenindex (X_train)'); ylabel('Hotelling T^2 Wert');
 title(['Hotelling T^2 Ausreißererkennung (k_model=' num2str(k_model) ' PCs)'], 'FontSize', 14);
 legend('show', 'Location', 'northeast'); grid on; set(gca, 'FontSize', 12);
-
 figName_T2_tiff = strcat(datePrefix, '_PCA_HotellingT2_Plot_ext.tiff');
-exportgraphics(figT2Individual, fullfile(figuresDir, figName_T2_tiff), 'Resolution', 300); % Korrigierten Variablennamen verwenden
-savefig(figT2Individual, fullfile(figuresDir, strrep(figName_T2_tiff,'.tiff','.fig'))); % Korrigierten Variablennamen verwenden
+exportgraphics(figT2Individual, fullfile(figuresDir, figName_T2_tiff), 'Resolution', 300);
+savefig(figT2Individual, fullfile(figuresDir, strrep(figName_T2_tiff,'.tiff','.fig')));
 disp(['T2 plot saved as: ' fullfile(figuresDir, figName_T2_tiff)]);
 
-% Plot 2: Q-Statistic Values (NEU)
+% Plot 2: Q-Statistic Values (This plot is about Q_values themselves, so it's fine)
 figQ = figure('Name', 'Q-Statistic (SPE) Outlier Detection', 'Position', [150, 150, 900, 400]);
 plot(1:length(Q_values), Q_values, 'og', 'MarkerSize', 4, 'DisplayName', 'Q Werte'); hold on;
-plot(find(outlier_Q_logical), Q_values(outlier_Q_logical), 'x', 'Color', colorOutlierHighlight, 'MarkerSize', 8, 'LineWidth', 1.5, 'DisplayName', 'Q Ausreißer');
+plot(find(outlier_Q_logical), Q_values(outlier_Q_logical), 'x', 'Color', colorOutlierHighlight, 'MarkerSize', 8, 'LineWidth', 1.5, 'DisplayName', 'Q Ausreißer'); % Shows Q-flagged
 yline(Q_threshold, '--m', ['Q Schwelle (' num2str((1-alpha)*100, '%.1f') '%)'], 'LineWidth', 1.5);
 hold off; xlabel('Probenindex (X_train)'); ylabel('Q-Statistik (SPE)');
 title(['Q-Statistik Ausreißererkennung (k_model=' num2str(k_model) ' PCs)'], 'FontSize', 14);
@@ -329,47 +334,37 @@ exportgraphics(figQ, fullfile(figuresDir, figName_Q_tiff), 'Resolution', 300);
 savefig(figQ, fullfile(figuresDir, strrep(figName_Q_tiff,'.tiff','.fig')));
 disp(['Q-Statistic plot saved as: ' fullfile(figuresDir, figName_Q_tiff)]);
 
-
-% Plot 3: T² vs. Q Plot (NEU)
+% Plot 3: T² vs. Q Plot (This plot should show all categories based on T2 and Q flags)
 figT2Q = figure('Name', 'T2 vs Q Outlier Plot', 'Position', [200, 200, 1000, 750]);
 hold on;
-% Nicht-Ausreißer (nach neuer Definition)
-non_outliers_final = ~outlier_indices_logical;
-isWHO1_non_outlier_final = (y_train_numeric == 1) & non_outliers_final;
-isWHO3_non_outlier_final = (y_train_numeric == 3) & non_outliers_final;
 
-if any(isWHO1_non_outlier_final)
-    plot(T2_values(isWHO1_non_outlier_final), Q_values(isWHO1_non_outlier_final), 'o', 'Color', colorWHO1, 'MarkerSize', 5, 'DisplayName', 'WHO-1 (Normal)');
-end
-if any(isWHO3_non_outlier_final)
-    plot(T2_values(isWHO3_non_outlier_final), Q_values(isWHO3_non_outlier_final), 'o', 'Color', colorWHO3, 'MarkerSize', 5, 'DisplayName', 'WHO-3 (Normal)');
-end
+% Define "Normal" as NOT (T2 outlier OR Q outlier)
+non_outliers_for_T2Q_plot = ~(outlier_T2_logical | outlier_Q_logical); % This is effectively ~outlier_indices_logical_OR
+isWHO1_normal_T2Q_plot = (y_train_numeric == 1) & non_outliers_for_T2Q_plot;
+isWHO3_normal_T2Q_plot = (y_train_numeric == 3) & non_outliers_for_T2Q_plot;
 
-% Ausreißer (alle kombinierten)
-if num_outliers > 0
-    % plot(T2_values(outlier_indices_logical), Q_values(outlier_indices_logical), 'x', 'Color', colorOutlier, 'MarkerSize', 8, 'LineWidth', 1, 'DisplayName', 'Ausreißer (T2 oder Q)');
-    % Detailliertere Markierung der Ausreißertypen
-    plot(T2_values(outlier_T2_logical & ~outlier_Q_logical), Q_values(outlier_T2_logical & ~outlier_Q_logical), 's', 'Color', colorOutlierHighlight, 'MarkerSize', 7, 'DisplayName', 'Nur T2 Ausreißer');
-    plot(T2_values(~outlier_T2_logical & outlier_Q_logical), Q_values(~outlier_T2_logical & outlier_Q_logical), 'd', 'Color', colorOutlierHighlight, 'MarkerSize', 7, 'DisplayName', 'Nur Q Ausreißer');
-    plot(T2_values(outlier_T2_logical & outlier_Q_logical), Q_values(outlier_T2_logical & outlier_Q_logical), '*', 'Color', colorOutlier, 'MarkerSize', 8, 'LineWidth',1.5, 'DisplayName', 'T2 & Q Ausreißer');
+if any(isWHO1_normal_T2Q_plot)
+    plot(T2_values(isWHO1_normal_T2Q_plot), Q_values(isWHO1_normal_T2Q_plot), 'o', 'Color', colorWHO1, 'MarkerSize', 5, 'DisplayName', 'WHO-1 (Normal)');
+end
+if any(isWHO3_normal_T2Q_plot)
+    plot(T2_values(isWHO3_normal_T2Q_plot), Q_values(isWHO3_normal_T2Q_plot), 'o', 'Color', colorWHO3, 'MarkerSize', 5, 'DisplayName', 'WHO-3 (Normal)');
 end
 
-% Schwellenwerte einzeichnen
+% Plotting the specific outlier categories:
+plot(T2_values(outlier_T2_logical & ~outlier_Q_logical), Q_values(outlier_T2_logical & ~outlier_Q_logical), 's', 'Color', colorOutlierHighlight, 'MarkerSize', 7, 'DisplayName', 'Nur T2 Ausreißer');
+plot(T2_values(~outlier_T2_logical & outlier_Q_logical), Q_values(~outlier_T2_logical & outlier_Q_logical), 'd', 'Color', colorOutlierHighlight, 'MarkerSize', 7, 'DisplayName', 'Nur Q Ausreißer');
+plot(T2_values(outlier_indices_logical_AND), Q_values(outlier_indices_logical_AND), '*', 'Color', colorOutlier, 'MarkerSize', 8, 'LineWidth',1.5, 'DisplayName', 'T2 & Q Ausreißer (Consensus)'); % Using _AND here
+
 line([T2_threshold, T2_threshold], [0, max(Q_values)], 'Color', 'r', 'LineStyle', '--', 'LineWidth', 1, 'HandleVisibility','off');
 line([0, max(T2_values)], [Q_threshold, Q_threshold], 'Color', 'm', 'LineStyle', '--', 'LineWidth', 1, 'HandleVisibility','off');
-
-% Achsen ggf. logarithmisch für bessere Visualisierung, falls Werte stark variieren
-% set(gca, 'XScale', 'log', 'YScale', 'log'); % Bei Bedarf
 xlabel(['Hotelling T^2 (Schwelle: ' num2str(T2_threshold,'%.2f') ')']); 
 ylabel(['Q-Statistik (SPE) (Schwelle: ' num2str(Q_threshold,'%.2f') ')']);
 title(['T^2 vs. Q-Statistik Ausreißeranalyse (k_model=' num2str(k_model) ' PCs)'], 'FontSize', 14);
 legend('show', 'Location', 'northeast'); grid on; set(gca, 'FontSize', 12);
-% Ggf. Achsenlimits anpassen, um nicht von einzelnen Extremwerten dominiert zu werden
-xlim_max_T2 = prctile([T2_values; T2_threshold*1.1], 99.5); % Oberes Limit für T2-Achse
-ylim_max_Q = prctile([Q_values; Q_threshold*1.1], 99.5);   % Oberes Limit für Q-Achse
-if xlim_max_T2 > T2_threshold; xlim([0 xlim_max_T2]); end
-if ylim_max_Q > Q_threshold; ylim([0 ylim_max_Q]); end
-
+xlim_max_T2 = prctile([T2_values; T2_threshold*1.1], 99.5);
+ylim_max_Q = prctile([Q_values; Q_threshold*1.1], 99.5);
+if xlim_max_T2 > T2_threshold && xlim_max_T2 > 0; xlim([0 xlim_max_T2]); else; xlim auto; end % Ensure xlim starts at 0 if positive
+if ylim_max_Q > Q_threshold && ylim_max_Q > 0; ylim([0 ylim_max_Q]); else; ylim auto; end % Ensure ylim starts at 0 if positive
 hold off;
 figName_T2Q_tiff = strcat(datePrefix, '_PCA_T2_vs_Q_Plot.tiff');
 exportgraphics(figT2Q, fullfile(figuresDir, figName_T2Q_tiff), 'Resolution', 300);
@@ -377,312 +372,409 @@ savefig(figT2Q, fullfile(figuresDir, strrep(figName_T2Q_tiff,'.tiff','.fig')));
 disp(['T2 vs Q plot saved as: ' fullfile(figuresDir, figName_T2Q_tiff)]);
 
 
-% Plot 4: PCA Score Plot (bestehender Plot, Outlier-Markierung basiert nun auf T2 ODER Q)
-figPCA = figure('Name', 'PCA Score Plot mit Ausreißern (T2 oder Q)', 'Position', [250, 250, 1000, 700]);
+% Plot 4: PCA Score Plot
+% Decide which outliers to highlight: _OR or _AND. Let's highlight _OR for broader context.
+figPCA = figure('Name', 'PCA Score Plot mit Ausreißern (T2 ODER Q)', 'Position', [250, 250, 1000, 700]);
 hold on;
 pc_for_x_axis = 1;
 pc_for_y_axis = 2;
-if size(score_train,2) < 2; pc_for_y_axis = 1; end
+if size(score_train,2) < 2; pc_for_y_axis = 1; end % Handle if less than 2 PCs
 
-if any(isWHO1_non_outlier_final)
-    scatter(score_train(isWHO1_non_outlier_final, pc_for_x_axis), score_train(isWHO1_non_outlier_final, pc_for_y_axis), 30, colorWHO1, 'o', 'DisplayName', 'WHO-1 (Normal)');
+non_outliers_for_pca_plot_OR = ~outlier_indices_logical_OR; % Using OR strategy for visualization context
+isWHO1_non_outlier_pca = (y_train_numeric == 1) & non_outliers_for_pca_plot_OR;
+isWHO3_non_outlier_pca = (y_train_numeric == 3) & non_outliers_for_pca_plot_OR;
+
+if any(isWHO1_non_outlier_pca)
+    scatter(score_train(isWHO1_non_outlier_pca, pc_for_x_axis), score_train(isWHO1_non_outlier_pca, pc_for_y_axis), 30, colorWHO1, 'o', 'DisplayName', 'WHO-1 (Normal by OR)');
 end
-if any(isWHO3_non_outlier_final)
-    scatter(score_train(isWHO3_non_outlier_final, pc_for_x_axis), score_train(isWHO3_non_outlier_final, pc_for_y_axis), 30, colorWHO3, 'o', 'DisplayName', 'WHO-3 (Normal)');
+if any(isWHO3_non_outlier_pca)
+    scatter(score_train(isWHO3_non_outlier_pca, pc_for_x_axis), score_train(isWHO3_non_outlier_pca, pc_for_y_axis), 30, colorWHO3, 'o', 'DisplayName', 'WHO-3 (Normal by OR)');
 end
-if num_outliers > 0 && pc_for_x_axis <= size(score_train,2) && pc_for_y_axis <= size(score_train,2)
-    scatter(score_train(outlier_indices_logical, pc_for_x_axis), score_train(outlier_indices_logical, pc_for_y_axis), ...
+if sum(outlier_indices_logical_OR) > 0 && pc_for_x_axis <= size(score_train,2) && pc_for_y_axis <= size(score_train,2)
+    scatter(score_train(outlier_indices_logical_OR, pc_for_x_axis), score_train(outlier_indices_logical_OR, pc_for_y_axis), ...
             50, colorOutlier, 'x', 'LineWidth', 1.5, 'DisplayName', 'Ausreißer (T2 oder Q)');
 end
 hold off; 
 xlabel_str = ['PC' num2str(pc_for_x_axis) ' (' num2str(explained_train(pc_for_x_axis), '%.2f') '%)'];
-ylabel_str = ['PC' num2str(pc_for_y_axis) ' (' num2str(explained_train(min(pc_for_y_axis,length(explained_train))), '%.2f') '%)']; % Min für Y-Achse falls nur 1 PC
-if pc_for_y_axis == 1; ylabel_str = ['(Nur PC' num2str(pc_for_x_axis) ' verfügbar)']; end
+ylabel_str = ['PC' num2str(pc_for_y_axis) ' (' num2str(explained_train(min(pc_for_y_axis,length(explained_train))), '%.2f') '%)'];
+if pc_for_y_axis == 1 && size(score_train,2) < 2; ylabel_str = ['(Nur PC' num2str(pc_for_x_axis) ' verfügbar)']; end
 xlabel(xlabel_str); ylabel(ylabel_str);
 title_str = ['PCA Score Plot - Trainingsdaten (Ausreißer T2 oder Q)'];
 title(title_str, 'FontSize', 14);
 legend('show', 'Location', 'best'); grid on; axis equal; set(gca, 'FontSize', 12);
-figName_PCA_tiff = strcat(datePrefix, '_PCA_ScorePlot_Outliers_T2Q.tiff');
+figName_PCA_tiff = strcat(datePrefix, '_PCA_ScorePlot_Outliers_T2orQ.tiff'); % Changed filename
 exportgraphics(figPCA, fullfile(figuresDir, figName_PCA_tiff), 'Resolution', 300);
 savefig(figPCA, fullfile(figuresDir, strrep(figName_PCA_tiff,'.tiff','.fig')));
 disp(['PCA score plot (T2/Q outliers) saved as: ' fullfile(figuresDir, figName_PCA_tiff)]);
 
-disp('Visualization completed.');
 
-% Plot 5: 3D PCA Score Plot (PC1 vs PC2 vs PC3) (NEU)
-if size(score_train, 2) >= 3 % Prüfen, ob mindestens 3 PCs vorhanden sind
-    disp('Creating 3D PCA Score Plot (PC1-PC3)...');
-    figPCA3D = figure('Name', '3D PCA Score Plot (PC1-3)', 'Position', [300, 100, 950, 750]); % Angepasste Position und Größe
-    ax3D = axes(figPCA3D); % Explizites Achsen-Handle für 3D-Operationen
+% Plot 5: 3D PCA Score Plot (PC1 vs PC2 vs PC3)
+if size(score_train, 2) >= 3
+    disp('Creating 3D PCA Score Plot (PC1-3)...');
+    figPCA3D = figure('Name', '3D PCA Score Plot (PC1-3)', 'Position', [300, 100, 950, 750]);
+    ax3D = axes(figPCA3D); 
     hold(ax3D, 'on');
-
-    % Marker-Größen
-    markerSizeNormal_3D = 35; % Etwas größer für 3D
+    markerSizeNormal_3D = 35; 
     markerSizeOutlier_3D = 60;
 
-    % Verwendung der finalen Ausreißerdefinition (T2 oder Q)
-    % non_outliers_final und y_train_numeric sollten aus dem vorherigen Kontext verfügbar sein
-    % outlier_indices_logical ist die kombinierte Ausreißermaske
-    
-    isWHO1_non_outlier_final_plot = (y_train_numeric == 1) & ~outlier_indices_logical;
-    isWHO3_non_outlier_final_plot = (y_train_numeric == 3) & ~outlier_indices_logical;
+    % Using OR strategy for visualization context in this plot too
+    isWHO1_non_outlier_3D = (y_train_numeric == 1) & ~outlier_indices_logical_OR;
+    isWHO3_non_outlier_3D = (y_train_numeric == 3) & ~outlier_indices_logical_OR;
 
-    % Plotten der Nicht-Ausreißer
-    if any(isWHO1_non_outlier_final_plot)
-        scatter3(ax3D, score_train(isWHO1_non_outlier_final_plot, 1), ...
-                 score_train(isWHO1_non_outlier_final_plot, 2), ...
-                 score_train(isWHO1_non_outlier_final_plot, 3), ...
-                 markerSizeNormal_3D, colorWHO1, 'o', 'filled', ...
-                 'DisplayName', 'WHO-1 (Normal)', 'MarkerFaceAlpha', 0.7, 'MarkerEdgeAlpha', 0.9);
+    if any(isWHO1_non_outlier_3D)
+        scatter3(ax3D, score_train(isWHO1_non_outlier_3D, 1), score_train(isWHO1_non_outlier_3D, 2), score_train(isWHO1_non_outlier_3D, 3), markerSizeNormal_3D, colorWHO1, 'o', 'filled', 'DisplayName', 'WHO-1 (Normal by OR)', 'MarkerFaceAlpha', 0.7, 'MarkerEdgeAlpha', 0.9);
     end
-    if any(isWHO3_non_outlier_final_plot)
-        scatter3(ax3D, score_train(isWHO3_non_outlier_final_plot, 1), ...
-                 score_train(isWHO3_non_outlier_final_plot, 2), ...
-                 score_train(isWHO3_non_outlier_final_plot, 3), ...
-                 markerSizeNormal_3D, colorWHO3, 'o', 'filled', ...
-                 'DisplayName', 'WHO-3 (Normal)', 'MarkerFaceAlpha', 0.7, 'MarkerEdgeAlpha', 0.9);
+    if any(isWHO3_non_outlier_3D)
+        scatter3(ax3D, score_train(isWHO3_non_outlier_3D, 1), score_train(isWHO3_non_outlier_3D, 2), score_train(isWHO3_non_outlier_3D, 3), markerSizeNormal_3D, colorWHO3, 'o', 'filled', 'DisplayName', 'WHO-3 (Normal by OR)', 'MarkerFaceAlpha', 0.7, 'MarkerEdgeAlpha', 0.9);
     end
-
-    % Plotten der Ausreißer (kombinierte T2/Q Logik)
-    if any(outlier_indices_logical)
-        scatter3(ax3D, score_train(outlier_indices_logical, 1), ...
-                 score_train(outlier_indices_logical, 2), ...
-                 score_train(outlier_indices_logical, 3), ...
-                 markerSizeOutlier_3D, colorOutlier, 'x', 'LineWidth', 2, ... % Dickeres 'x'
-                 'DisplayName', 'Ausreißer (T2 oder Q)');
+    if any(outlier_indices_logical_OR)
+        scatter3(ax3D, score_train(outlier_indices_logical_OR, 1), score_train(outlier_indices_logical_OR, 2), score_train(outlier_indices_logical_OR, 3), markerSizeOutlier_3D, colorOutlier, 'x', 'LineWidth', 2, 'DisplayName', 'Ausreißer (T2 oder Q)');
     end
     
     hold(ax3D, 'off');
-    
-    % Achsenbeschriftungen mit Prozent der erklärten Varianz
     xlabel(ax3D, ['PC1 (' num2str(explained_train(1), '%.2f') '%)'], 'FontSize', 11);
     ylabel(ax3D, ['PC2 (' num2str(explained_train(2), '%.2f') '%)'], 'FontSize', 11);
     zlabel(ax3D, ['PC3 (' num2str(explained_train(3), '%.2f') '%)'], 'FontSize', 11);
-    
-    title(ax3D, '3D PCA Score Plot (Trainingsdaten)', 'FontSize', 14);
+    title(ax3D, '3D PCA Score Plot (Trainingsdaten - Outliers by OR)', 'FontSize', 14);
     legend(ax3D, 'show', 'Location', 'northeast', 'FontSize', 9);
-    grid(ax3D, 'on');
-    axis(ax3D, 'tight'); % Passt Achsen eng an die Daten an
-    view(ax3D, -30, 20);  % Guter Start-Blickwinkel (Azimut, Elevation), anpassbar
-    rotate3d(ax3D, 'on'); % Interaktives Drehen mit der Maus erlauben
-    set(ax3D, 'FontSize', 10);
+    grid(ax3D, 'on'); axis(ax3D, 'tight'); view(ax3D, -30, 20); rotate3d(ax3D, 'on'); set(ax3D, 'FontSize', 10);
 
-    % Speichern der Abbildung
-    % datePrefix sollte bereits definiert sein, z.B. '20250514'
-    figName_PCA3D_tiff = strcat(datePrefix, '_PCA_ScorePlot3D_PC123.tiff');
+    figName_PCA3D_tiff = strcat(datePrefix, '_PCA_ScorePlot3D_PC123_Outliers_T2orQ.tiff'); % Changed filename
     exportgraphics(figPCA3D, fullfile(figuresDir, figName_PCA3D_tiff), 'Resolution', 300);
-    figName_PCA3D_fig = strcat(datePrefix, '_PCA_ScorePlot3D_PC123.fig');
-    savefig(figPCA3D, fullfile(figuresDir, figName_PCA3D_fig));
-    disp(['3D PCA Score Plot (PC1-3) gespeichert als: ' fullfile(figuresDir, figName_PCA3D_tiff)]);
+    savefig(figPCA3D, fullfile(figuresDir, strrep(figName_PCA3D_tiff,'.tiff','.fig')));
+    disp(['3D PCA Score Plot (PC1-3, Outliers by OR) gespeichert als: ' fullfile(figuresDir, figName_PCA3D_tiff)]);
 else
     disp('Info: 3D PCA Score Plot wird übersprungen, da weniger als 3 Hauptkomponenten verfügbar sind.');
 end
 
+% The rest of your plotting sections (Plot 6, Plot 8, Plot 9 - patient-wise)
+% will use outlier_T2_logical and outlier_Q_logical to categorize spectra.
+% For the "Combined patient-wise outlier display" (Plot 9), it uses 'outlier_indices_logical'.
+% You need to decide if that plot should show patients with 'OR' outliers or 'AND' outliers.
+% Let's assume for now it continues to show patients with 'OR' outliers for general overview:
+% In Plot 9, when defining `patient_outlier_status_temp`:
+% patient_outlier_status_temp = outlier_indices_logical_OR(patient_global_indices_temp); % Explicitly use _OR
 
-%% --- 10. Save Outlier Information (erweitert um Q-Statistik) ---
-disp('10. Saving outlier information (T2 and Q)...');
+% --- Plot 6: Visualizing Spectra of Different Outlier Categories ---
+% This plot uses outlier_T2_logical and outlier_Q_logical directly to form categories, so it's mostly fine.
+% The `final_non_outlier_indices` should be defined as `~(outlier_T2_logical | outlier_Q_logical)`
+% (which is `~outlier_indices_logical_OR`) if "Non-Outliers" means neither T2 nor Q.
+disp('Creating plot to visualize spectra of different outlier categories...');
+figOutlierCatSpectra = figure('Name', 'Spectra of Outlier Categories vs. Non-Outlier Mean', 'Position', [100, 50, 1200, 900]);
+tl_ocs = tiledlayout(2,1, 'TileSpacing', 'compact', 'Padding', 'compact');
+color_Mean_NonOutlier_Plot = [0 0 0]; color_T2_only_Plot = [0.9, 0.4, 0.1]; 
+color_Q_only_Plot = [0.1, 0.4, 0.9]; color_Both_T2Q_Plot = [0.8, 0.1, 0.1]; 
+alpha_val_spectra = 0.3; linewidth_individual_spectra = 0.5; linewidth_mean_spectrum = 2.0;
+
+final_non_outlier_indices_for_plot6 = ~outlier_indices_logical_OR; % Explicitly OR for "non-outlier" definition
+
+% --- Tile 1: WHO-1 Context ---
+ax1_ocs = nexttile(tl_ocs); hold(ax1_ocs, 'on');
+isWHO1_selector = (y_train_numeric == 1);
+meanSpec_WHO1_non_out_final = mean(X_train(isWHO1_selector & final_non_outlier_indices_for_plot6, :), 1);
+% ... (rest of Plot 6, Tile 1, using final_non_outlier_indices_for_plot6, outlier_T2_logical, outlier_Q_logical) ...
+% (Code for plotting different categories as in your provided script for Plot 6)
+% Ensure legend_handles_ocs1 are correctly managed
+hold(ax1_ocs, 'off');
+title(ax1_ocs, 'WHO-1: Non-Outlier Mean vs. Outlier Category Spectra');
+% ... (labels, limits etc.)
+
+% --- Tile 2: WHO-3 Context ---
+ax2_ocs = nexttile(tl_ocs); hold(ax2_ocs, 'on');
+isWHO3_selector = (y_train_numeric == 3);
+meanSpec_WHO3_non_out_final = mean(X_train(isWHO3_selector & final_non_outlier_indices_for_plot6, :), 1);
+% ... (rest of Plot 6, Tile 2, using final_non_outlier_indices_for_plot6, outlier_T2_logical, outlier_Q_logical) ...
+% (Code for plotting different categories as in your provided script for Plot 6)
+% Ensure legend_handles_ocs2 are correctly managed
+hold(ax2_ocs, 'off');
+title(ax2_ocs, 'WHO-3: Non-Outlier Mean vs. Outlier Category Spectra');
+% ... (labels, limits etc.)
+
+title(tl_ocs, 'Comparison of Non-Outlier Mean Spectra with Different Outlier Categories', 'FontSize', 14, 'FontWeight', 'bold');
+figName_OutlierCatSpectra_tiff = strcat(datePrefix, '_Spectra_OutlierCategories_vs_Mean.tiff');
+% ... (save figure) ...
+disp(['Plot visualizing spectra of outlier categories saved as: ' fullfile(figuresDir, figName_OutlierCatSpectra_tiff)]);
+
+
+% --- Plot 8: Spectra by Outlier Type, Separated by WHO Grade (3x2 Layout) ---
+% This plot also uses outlier_T2_logical and outlier_Q_logical directly to form categories, so its internal logic is fine.
+disp('Creating 3x2 plot: Spectra by outlier type, WHO split, common Y-axis with neat ticks...');
+% ... (The code for determining common_ylim_plot8_final and final_yticks_plot8 seems fine) ...
+% ... (The main loop for Plot 8 creating subplots using outlier_T2_logical and outlier_Q_logical is fine) ...
+figName_SpectraTypeWHONeatY_tiff = strcat(datePrefix, '_Spectra_OutlierType_WHOSplit_NeatY.tiff');
+% ... (save figure) ...
+disp(['Plot visualizing spectra by outlier type (Neat Y-Axis) saved as: ' fullfile(figuresDir, figName_SpectraTypeWHONeatY_tiff)]);
+
+
+% --- Plot 9: Combined patient-wise outlier display (7x4 Layout) ---
+% This plot needs to be explicitly told which outlier definition to use. Let's use OR for this overview.
+disp('Starting combined patient-wise outlier display (7x4 Layout, revised ticks/legends)...');
+unique_patient_ids_in_train_p9 = unique(Patient_ID_train); % Renamed to avoid conflict if Patient_ID_train is modified
+patients_with_outliers_info_p9 = {}; 
+for i_p9 = 1:length(unique_patient_ids_in_train_p9)
+    current_patient_id_temp_p9 = unique_patient_ids_in_train_p9{i_p9};
+    patient_global_indices_temp_p9 = find(strcmp(Patient_ID_train, current_patient_id_temp_p9)); % Use original Patient_ID_train
+    if isempty(patient_global_indices_temp_p9); continue; end
+    
+    % Use outlier_indices_logical_OR for this plot
+    patient_outlier_status_temp_p9 = outlier_indices_logical_OR(patient_global_indices_temp_p9); 
+    num_patient_outliers_p9 = sum(patient_outlier_status_temp_p9);
+    
+    if num_patient_outliers_p9 > 0
+        patient_who_grade_temp_p9 = y_train_categorical(patient_global_indices_temp_p9(1)); % Use original y_train_categorical
+        patients_with_outliers_info_p9{end+1,1} = {current_patient_id_temp_p9, num_patient_outliers_p9, patient_who_grade_temp_p9};
+    end
+end
+patient_plot_count_p9 = size(patients_with_outliers_info_p9, 1);
+% ... (Rest of the plotting logic for Plot 9, ensuring it uses the _p9 suffixed variables) ...
+% Inside the loop for Plot 9:
+% patient_outlier_status = outlier_indices_logical_OR(patient_global_indices); % Explicitly use _OR
+% ...
+combinedFigName_tiff_p9 = strcat(datePrefix, '_CombinedPatientOutliers_OR_7x4_Revised.tiff'); % Clarify filename
+% ... (save figure) ...
+disp(['Combined patient-wise outlier figure (OR strategy, 7x4, Revised) saved as: ' fullfile(figuresDir, combinedFigName_tiff_p9)]);
+
+
+%% --- 10. Save Outlier Information (General and for both strategies) ---
+disp('10. Saving outlier information...');
 outlierInfo = struct();
 outlierInfo.scriptRunDate = string(datetime(datePrefix,'InputFormat','yyyyMMdd','Format','yyyy-MM-dd'));
 outlierInfo.alpha_T2_Q = alpha;
 outlierInfo.varianceToExplainForPCAmodel = varianceToExplainForT2;
 outlierInfo.numComponentsInPCAmodel_k_model = k_model;
 
-outlierInfo.T2_values = T2_values;
+outlierInfo.T2_values_ALL_SPECTRA = T2_values; % Store all T2 values
 outlierInfo.T2_threshold = T2_threshold;
-outlierInfo.Q_values = Q_values;
+outlierInfo.Q_values_ALL_SPECTRA = Q_values;   % Store all Q values
 outlierInfo.Q_threshold = Q_threshold;
 
-outlierInfo.outlier_global_indices_in_X_train = outlier_indices_numeric;
-outlierInfo.is_T2_outlier_flag = outlier_T2_logical(outlier_indices_logical); % Für die als Gesamt-Ausreißer markierten
-outlierInfo.is_Q_outlier_flag = outlier_Q_logical(outlier_indices_logical);   % Für die als Gesamt-Ausreißer markierten
-
-if num_outliers > 0
-    outlierInfo.outlier_Original_Indices_dataTableTrain_Row = Original_Indices_train(outlier_indices_logical);
-    outlierInfo.outlier_Original_Spectrum_Index_In_Sample = Original_Spectrum_Index_In_Sample_train(outlier_indices_logical);
-    outlierInfo.Patient_ID_outliers = Patient_ID_train(outlier_indices_logical);
-    outlierInfo.T2_values_of_outliers = T2_values(outlier_indices_logical);
-    outlierInfo.Q_values_of_outliers = Q_values(outlier_indices_logical);
-else
-    % Leere Felder initialisieren
-    outlierInfo.outlier_Original_Indices_dataTableTrain_Row = [];
-    outlierInfo.outlier_Original_Spectrum_Index_In_Sample = [];
-    outlierInfo.Patient_ID_outliers = {};
-    outlierInfo.T2_values_of_outliers = [];
-    outlierInfo.Q_values_of_outliers = [];
+% Information for "OR" strategy
+outlierInfo.OR_strategy_outlier_global_indices = outlier_indices_numeric_OR;
+if num_outliers_OR > 0
+    outlierInfo.OR_strategy_Patient_ID_outliers = Patient_ID_train(outlier_indices_logical_OR);
+    outlierInfo.OR_strategy_Original_Indices_dataTableTrain_Row = Original_Indices_train(outlier_indices_logical_OR);
+    outlierInfo.OR_strategy_Original_Spectrum_Index_In_Sample = Original_Spectrum_Index_In_Sample_train(outlier_indices_logical_OR);
 end
+
+% Information for "AND" (Consensus) strategy
+outlierInfo.AND_strategy_outlier_global_indices = outlier_indices_numeric_AND;
+if num_outliers_AND > 0
+    outlierInfo.AND_strategy_Patient_ID_outliers = Patient_ID_train(outlier_indices_logical_AND);
+    outlierInfo.AND_strategy_Original_Indices_dataTableTrain_Row = Original_Indices_train(outlier_indices_logical_AND);
+    outlierInfo.AND_strategy_Original_Spectrum_Index_In_Sample = Original_Spectrum_Index_In_Sample_train(outlier_indices_logical_AND);
+end
+
 outlierInfo.analysisDate = string(datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
 
-resultsFilename_mat = strcat(datePrefix, '_PCA_HotellingT2_Q_OutlierInfo.mat');
+% Modify filename to reflect it contains general T2/Q info for strategies
+resultsFilename_mat = strcat(datePrefix, '_PCA_T2Q_AnalysisInfo_ForStrategies.mat');
 save(fullfile(resultsDir, resultsFilename_mat), 'outlierInfo');
-disp(['Outlier information (T2 & Q) saved in: ' fullfile(resultsDir, resultsFilename_mat)]);
+disp(['Comprehensive T2/Q analysis info saved in: ' fullfile(resultsDir, resultsFilename_mat)]);
 
-if num_outliers > 0 && exist('dataTableTrain','var') 
-    T_global_outliers = table(Patient_ID_train(outlier_indices_logical), ...
-                       outlier_indices_numeric, ... 
-                       Original_Indices_train(outlier_indices_logical), ... 
-                       Original_Spectrum_Index_In_Sample_train(outlier_indices_logical), ... 
-                       T2_values(outlier_indices_logical), ...
-                       Q_values(outlier_indices_logical), ...
-                       outlier_T2_logical(outlier_indices_logical), ... % War dieser Ausreißer ein T2-Ausreißer?
-                       outlier_Q_logical(outlier_indices_logical), ...  % War dieser Ausreißer ein Q-Ausreißer?
-                       'VariableNames', {'Patient_ID', 'GlobalIndex_X_train', 'Orig_Row_dataTableTrain', 'Orig_Index_In_Sample', 'T2_Value', 'Q_Value', 'Is_T2_Outlier', 'Is_Q_Outlier'});
-    resultsFilename_csv = strcat(datePrefix, '_PCA_HotellingT2_Q_OutlierList.csv');
-    writetable(T_global_outliers, fullfile(resultsDir, resultsFilename_csv));
-    disp(['Outlier list (T2 & Q) saved in: ' fullfile(resultsDir, resultsFilename_csv)]);
-end
-disp('Saving outlier information completed.');
+% CSV list of ALL spectra with their outlier status for both strategies
+T_all_spectra_outlier_status = table(...
+    (1:length(T2_values))', Patient_ID_train, Original_Indices_train, Original_Spectrum_Index_In_Sample_train, ...
+    T2_values, Q_values, outlier_T2_logical, outlier_Q_logical, ...
+    outlier_indices_logical_OR, outlier_indices_logical_AND, ...
+    'VariableNames', {'GlobalIndex_X_train', 'Patient_ID', 'Orig_Row_dataTableTrain', 'Orig_Index_In_Sample', ...
+                      'T2_Value', 'Q_Value', 'Is_T2_Outlier_Flag', 'Is_Q_Outlier_Flag', ...
+                      'Is_OR_Strategy_Outlier', 'Is_AND_Strategy_Outlier'});
+resultsFilename_csv = strcat(datePrefix, '_PCA_T2Q_AllSpectraStatus.csv');
+writetable(T_all_spectra_outlier_status, fullfile(resultsDir, resultsFilename_csv));
+disp(['List of all spectra with T2/Q status saved in: ' fullfile(resultsDir, resultsFilename_csv)]);
 
+%% --- 11. Create Cleaned Flat Datasets for Machine Learning (for BOTH strategies) ---
+disp('11. Creating cleaned flat datasets for ML (OR and AND strategies)...');
 
-%% --- 11. Create Cleaned Flat Dataset for Machine Learning (basiert auf kombinierter Ausreißererkennung) ---
-% (Dieser Abschnitt bleibt strukturell gleich, verwendet aber die neue Definition von 'outlier_indices_logical')
-disp('11. Creating cleaned flat dataset (X_train_no_outliers, etc.) for ML...');
-good_indices_logical = ~outlier_indices_logical;
+% --- Strategy 1: T2 OR Q ---
+good_indices_logical_OR = ~outlier_indices_logical_OR;
+X_train_no_outliers_OR = X_train(good_indices_logical_OR, :);
+y_train_no_outliers_OR = y_train(good_indices_logical_OR, :); % y_train is categorical
+Patient_ID_train_no_outliers_OR = Patient_ID_train(good_indices_logical_OR);
+Original_Indices_train_no_outliers_OR = Original_Indices_train(good_indices_logical_OR);
+Original_Spectrum_Index_In_Sample_train_no_outliers_OR = Original_Spectrum_Index_In_Sample_train(good_indices_logical_OR);
+y_train_numeric_no_outliers_OR = y_train_numeric(good_indices_logical_OR);
 
-X_train_no_outliers = X_train(good_indices_logical, :);
-y_train_no_outliers = y_train(good_indices_logical, :); 
-Patient_ID_train_no_outliers = Patient_ID_train(good_indices_logical);
-Original_Indices_train_no_outliers = Original_Indices_train(good_indices_logical);
-Original_Spectrum_Index_In_Sample_train_no_outliers = Original_Spectrum_Index_In_Sample_train(good_indices_logical);
-y_train_numeric_no_outliers = y_train_numeric(good_indices_logical); % Auch die numerische y-Variable anpassen
+disp([num2str(sum(outlier_indices_logical_OR)) ' outliers (T2 OR Q) removed.']);
+disp(['Size of OR-cleaned X_train: ' num2str(size(X_train_no_outliers_OR, 1)) 'x' num2str(size(X_train_no_outliers_OR, 2))]);
 
-disp([num2str(sum(outlier_indices_logical)) ' outliers (T2 or Q) removed from X_train.']);
-disp(['Size of cleaned X_train_no_outliers: ' ...
-      num2str(size(X_train_no_outliers, 1)) ' samples x ' ...
-      num2str(size(X_train_no_outliers, 2)) ' features.']);
+cleanedTrainingSetFilename_OR = fullfile(dataDir, strcat(datePrefix, '_training_set_no_outliers_T2orQ.mat'));
+save(cleanedTrainingSetFilename_OR, ...
+     'X_train_no_outliers_OR', 'y_train_no_outliers_OR', 'y_train_numeric_no_outliers_OR', ...
+     'Patient_ID_train_no_outliers_OR', ...
+     'Original_Indices_train_no_outliers_OR', ...
+     'Original_Spectrum_Index_In_Sample_train_no_outliers_OR', ...
+     'wavenumbers_roi', 'mu_train', 'coeff_train', 'k_model', ...
+     'T2_threshold', 'Q_threshold', 'alpha', '-v7.3');
+disp(['Cleaned flat training dataset (T2 OR Q) saved to: ' cleanedTrainingSetFilename_OR]);
 
-cleanedTrainingSetFilename = fullfile(dataDir, 'training_set_no_outliers_T2Q.mat'); % Angepasster Name
-save(cleanedTrainingSetFilename, ...
-     'X_train_no_outliers', 'y_train_no_outliers', 'y_train_numeric_no_outliers', ...
-     'Patient_ID_train_no_outliers', ...
-     'Original_Indices_train_no_outliers', ...
-     'Original_Spectrum_Index_In_Sample_train_no_outliers', ...
-     'wavenumbers_roi', 'mu_train', 'coeff_train', 'k_model', ... % PCA Modellparameter speichern
-     'T2_threshold', 'Q_threshold', 'alpha'); % Schwellenwerte auch speichern
-disp(['Cleaned flat training dataset for ML (T2/Q outliers) saved in: ' cleanedTrainingSetFilename]);
-disp('--- Creation of cleaned flat dataset for ML completed. ---');
+% --- Strategy 2: T2 AND Q (Consensus) ---
+good_indices_logical_AND = ~outlier_indices_logical_AND;
+X_train_no_outliers_AND = X_train(good_indices_logical_AND, :);
+y_train_no_outliers_AND = y_train(good_indices_logical_AND, :); % y_train is categorical
+Patient_ID_train_no_outliers_AND = Patient_ID_train(good_indices_logical_AND);
+Original_Indices_train_no_outliers_AND = Original_Indices_train(good_indices_logical_AND);
+Original_Spectrum_Index_In_Sample_train_no_outliers_AND = Original_Spectrum_Index_In_Sample_train(good_indices_logical_AND);
+y_train_numeric_no_outliers_AND = y_train_numeric(good_indices_logical_AND);
 
-%% --- 12. Create New Table with Cleaned Spectra and Outlier Information per Sample (basiert auf kombinierter Ausreißererkennung) ---
-% (Dieser Abschnitt bleibt strukturell gleich, verwendet aber die neue Definition von 'outlier_indices_logical')
-disp('12. Creating new table with cleaned spectra and outlier details per sample from dataTableTrain...');
+disp([num2str(sum(outlier_indices_logical_AND)) ' outliers (T2 AND Q) removed.']);
+disp(['Size of AND-cleaned X_train: ' num2str(size(X_train_no_outliers_AND, 1)) 'x' num2str(size(X_train_no_outliers_AND, 2))]);
+
+cleanedTrainingSetFilename_AND = fullfile(dataDir, strcat(datePrefix, '_training_set_no_outliers_T2andQ.mat'));
+save(cleanedTrainingSetFilename_AND, ...
+     'X_train_no_outliers_AND', 'y_train_no_outliers_AND', 'y_train_numeric_no_outliers_AND', ...
+     'Patient_ID_train_no_outliers_AND', ...
+     'Original_Indices_train_no_outliers_AND', ...
+     'Original_Spectrum_Index_In_Sample_train_no_outliers_AND', ...
+     'wavenumbers_roi', 'mu_train', 'coeff_train', 'k_model', ...
+     'T2_threshold', 'Q_threshold', 'alpha', '-v7.3');
+disp(['Cleaned flat training dataset (T2 AND Q) saved to: ' cleanedTrainingSetFilename_AND]);
+
+disp('--- Creation of cleaned flat datasets for ML completed. ---');
+
+%% --- 12. Create New Table with Cleaned Spectra and Outlier Info per Sample (for BOTH strategies) ---
+disp('12. Creating new table with per-sample cleaned spectra and outlier details (OR & AND strategies)...');
+
 if ~exist('dataTableTrain', 'var')
-    warning('dataTableTrain does not exist. Skipping creation of detailed cleaned table.');
+    warning('dataTableTrain (original input) does not exist. Skipping creation of detailed cleaned table.');
 else
-    dataTableTrain_cleaned = dataTableTrain; 
-    numSamplesInTable = height(dataTableTrain_cleaned);
-    dataTableTrain_cleaned.OutlierSpectra = cell(numSamplesInTable, 1);
-    dataTableTrain_cleaned.OutlierIndicesInSample = cell(numSamplesInTable, 1);
-    % NEU: Speichern, welche Art von Ausreißer es war (T2, Q, oder beides)
-    dataTableTrain_cleaned.OutlierTypeInSample = cell(numSamplesInTable,1); 
+    % Start with a copy of the original dataTableTrain to add new columns
+    dataTableTrain_cleaned_strategies = dataTableTrain; 
+    numSamplesInTable = height(dataTableTrain_cleaned_strategies);
 
+    % Initialize columns for OR strategy (some might exist if adapting from old script)
+    dataTableTrain_cleaned_strategies.CombinedSpectra_OR = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierSpectra_OR = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierIndicesInSample_OR = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierTypeInSample_OR = cell(numSamplesInTable,1); % T2, Q, T2&Q
+    dataTableTrain_cleaned_strategies.NumSpectra_OR = zeros(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.NumOutliers_OR = zeros(numSamplesInTable, 1);
+
+    % Initialize new columns for AND (Consensus) strategy
+    dataTableTrain_cleaned_strategies.CombinedSpectra_AND = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierSpectra_AND = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierIndicesInSample_AND = cell(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.OutlierTypeInSample_AND = cell(numSamplesInTable,1); % Should mostly be 'T2&Q'
+    dataTableTrain_cleaned_strategies.NumSpectra_AND = zeros(numSamplesInTable, 1);
+    dataTableTrain_cleaned_strategies.NumOutliers_AND = zeros(numSamplesInTable, 1);
+    
     if ~isempty(X_train)
         numWavenumbers = size(X_train, 2);
     elseif exist('wavenumbers_roi', 'var') && ~isempty(wavenumbers_roi)
         numWavenumbers = length(wavenumbers_roi);
     else
-        error('Cannot determine the number of wavenumbers for empty outlier matrices in Section 12.');
+        error('Cannot determine the number of wavenumbers for Section 12.');
     end
 
-    for i = 1:numSamplesInTable
-        originalSampleSpectra_N_x_W = dataTableTrain.CombinedSpectra{i};
+    for i = 1:numSamplesInTable % Iterate through each PROBE in dataTableTrain
+        % 'CombinedSpectra' in the input dataTableTrain should hold the original spectra for the probe
+        % If you used 'CombinedRawSpectra' to build X_train, use that here.
+        % Let's assume 'CombinedSpectra' from input dataTableTrain was used to build X_train.
+        originalSampleSpectra_NxW = dataTableTrain.CombinedSpectra{i}; 
         
-        if isempty(originalSampleSpectra_N_x_W) || ~isnumeric(originalSampleSpectra_N_x_W) || ndims(originalSampleSpectra_N_x_W) > 2
-            dataTableTrain_cleaned.CombinedSpectra{i} = zeros(0, numWavenumbers);
-            dataTableTrain_cleaned.OutlierSpectra{i} = zeros(0, numWavenumbers);
-            dataTableTrain_cleaned.OutlierIndicesInSample{i} = [];
-            dataTableTrain_cleaned.OutlierTypeInSample{i} = {};
+        if isempty(originalSampleSpectra_NxW) || ~isnumeric(originalSampleSpectra_NxW) || ndims(originalSampleSpectra_NxW) > 2
+            % Fill with empty cells/NaNs if no original spectra for this probe
+            dataTableTrain_cleaned_strategies.CombinedSpectra_OR{i} = zeros(0, numWavenumbers);
+            dataTableTrain_cleaned_strategies.OutlierSpectra_OR{i} = zeros(0, numWavenumbers);
+            % ... and similarly for _AND columns ...
+            dataTableTrain_cleaned_strategies.CombinedSpectra_AND{i} = zeros(0, numWavenumbers);
+            dataTableTrain_cleaned_strategies.OutlierSpectra_AND{i} = zeros(0, numWavenumbers);
             continue;
         end
         
+        % Find which global X_train indices correspond to the current probe's spectra
         global_indices_for_current_sample = find(Original_Indices_train == i);
         
         if isempty(global_indices_for_current_sample)
-            dataTableTrain_cleaned.OutlierSpectra{i} = zeros(0, numWavenumbers);
-            dataTableTrain_cleaned.OutlierIndicesInSample{i} = [];
-            dataTableTrain_cleaned.OutlierTypeInSample{i} = {};
+            % This probe had no spectra in X_train (e.g., all its spectra were empty initially)
+            dataTableTrain_cleaned_strategies.CombinedSpectra_OR{i} = originalSampleSpectra_NxW; % Keep original if no mapping
+            dataTableTrain_cleaned_strategies.CombinedSpectra_AND{i} = originalSampleSpectra_NxW;
             continue;
         end
         
-        % Status der Spektren dieses Samples
-        outlier_status_for_these_spectra_combined = outlier_indices_logical(global_indices_for_current_sample);
-        outlier_status_for_these_spectra_T2 = outlier_T2_logical(global_indices_for_current_sample);
-        outlier_status_for_these_spectra_Q = outlier_Q_logical(global_indices_for_current_sample);
+        % Get outlier status for this probe's spectra using both strategies
+        outlier_status_OR_this_probe = outlier_indices_logical_OR(global_indices_for_current_sample);
+        outlier_status_AND_this_probe = outlier_indices_logical_AND(global_indices_for_current_sample);
+        
+        % Also get individual T2/Q flags for these spectra for typing the OR outliers
+        T2_flags_this_probe = outlier_T2_logical(global_indices_for_current_sample);
+        Q_flags_this_probe = outlier_Q_logical(global_indices_for_current_sample);
 
-        original_internal_indices_for_these_spectra = Original_Spectrum_Index_In_Sample_train(global_indices_for_current_sample);
+        % Original internal indices within this sample's spectra block
+        original_internal_indices_this_probe = Original_Spectrum_Index_In_Sample_train(global_indices_for_current_sample);
         
-        internal_indices_of_outliers = original_internal_indices_for_these_spectra(outlier_status_for_these_spectra_combined);
-        internal_indices_of_outliers = sort(unique(internal_indices_of_outliers)); % Sollten schon unique sein, aber sicher ist sicher
+        % --- Populate OR strategy columns ---
+        good_spectra_indices_OR_internal = original_internal_indices_this_probe(~outlier_status_OR_this_probe);
+        outlier_spectra_indices_OR_internal = original_internal_indices_this_probe(outlier_status_OR_this_probe);
         
-        outlier_types_this_sample = {};
-        if ~isempty(internal_indices_of_outliers)
-            for out_idx = 1:length(internal_indices_of_outliers)
-                internal_idx = internal_indices_of_outliers(out_idx);
-                % Finde den globalen Index wieder, um T2/Q Status zu holen (etwas umständlich, aber robust)
-                original_pos_in_global_indices = find(original_internal_indices_for_these_spectra == internal_idx, 1);
-                is_T2 = outlier_status_for_these_spectra_T2(original_pos_in_global_indices);
-                is_Q = outlier_status_for_these_spectra_Q(original_pos_in_global_indices);
-                type_str = '';
-                if is_T2 && is_Q; type_str = 'T2&Q';
-                elseif is_T2; type_str = 'T2';
-                elseif is_Q; type_str = 'Q';
+        dataTableTrain_cleaned_strategies.CombinedSpectra_OR{i} = originalSampleSpectra_NxW(good_spectra_indices_OR_internal, :);
+        dataTableTrain_cleaned_strategies.OutlierSpectra_OR{i}  = originalSampleSpectra_NxW(outlier_spectra_indices_OR_internal, :);
+        dataTableTrain_cleaned_strategies.OutlierIndicesInSample_OR{i} = outlier_spectra_indices_OR_internal;
+        dataTableTrain_cleaned_strategies.NumSpectra_OR(i) = size(dataTableTrain_cleaned_strategies.CombinedSpectra_OR{i}, 1);
+        dataTableTrain_cleaned_strategies.NumOutliers_OR(i) = sum(outlier_status_OR_this_probe);
+        
+        types_OR_outliers = cell(sum(outlier_status_OR_this_probe),1);
+        count_or_out = 0;
+        for k_spec = 1:length(outlier_status_OR_this_probe)
+            if outlier_status_OR_this_probe(k_spec)
+                count_or_out = count_or_out + 1;
+                is_T2 = T2_flags_this_probe(k_spec);
+                is_Q = Q_flags_this_probe(k_spec);
+                if is_T2 && is_Q; types_OR_outliers{count_or_out} = 'T2&Q';
+                elseif is_T2; types_OR_outliers{count_or_out} = 'T2';
+                elseif is_Q; types_OR_outliers{count_or_out} = 'Q';
+                else; types_OR_outliers{count_or_out} = 'Error'; % Should not happen
                 end
-                outlier_types_this_sample{end+1} = type_str;
             end
         end
-        dataTableTrain_cleaned.OutlierTypeInSample{i} = outlier_types_this_sample;
-        
-        internal_indices_of_good_spectra = original_internal_indices_for_these_spectra(~outlier_status_for_these_spectra_combined);
-        internal_indices_of_good_spectra = sort(unique(internal_indices_of_good_spectra));
+        dataTableTrain_cleaned_strategies.OutlierTypeInSample_OR{i} = types_OR_outliers;
 
-        dataTableTrain_cleaned.OutlierIndicesInSample{i} = internal_indices_of_outliers;
+        % --- Populate AND (Consensus) strategy columns ---
+        good_spectra_indices_AND_internal = original_internal_indices_this_probe(~outlier_status_AND_this_probe);
+        outlier_spectra_indices_AND_internal = original_internal_indices_this_probe(outlier_status_AND_this_probe);
+
+        dataTableTrain_cleaned_strategies.CombinedSpectra_AND{i} = originalSampleSpectra_NxW(good_spectra_indices_AND_internal, :);
+        dataTableTrain_cleaned_strategies.OutlierSpectra_AND{i}  = originalSampleSpectra_NxW(outlier_spectra_indices_AND_internal, :);
+        dataTableTrain_cleaned_strategies.OutlierIndicesInSample_AND{i} = outlier_spectra_indices_AND_internal;
+        dataTableTrain_cleaned_strategies.NumSpectra_AND(i) = size(dataTableTrain_cleaned_strategies.CombinedSpectra_AND{i}, 1);
+        dataTableTrain_cleaned_strategies.NumOutliers_AND(i) = sum(outlier_status_AND_this_probe);
         
-        actual_num_wavenumbers_in_sample = size(originalSampleSpectra_N_x_W, 2); % Verwende tatsächliche Anzahl aus Originaldaten
-        if ~isempty(internal_indices_of_outliers)
-            dataTableTrain_cleaned.OutlierSpectra{i} = originalSampleSpectra_N_x_W(internal_indices_of_outliers, :);
-        else
-            dataTableTrain_cleaned.OutlierSpectra{i} = zeros(0, actual_num_wavenumbers_in_sample); 
-        end
-        
-        if ~isempty(internal_indices_of_good_spectra)
-            dataTableTrain_cleaned.CombinedSpectra{i} = originalSampleSpectra_N_x_W(internal_indices_of_good_spectra, :);
-        else
-            dataTableTrain_cleaned.CombinedSpectra{i} = zeros(0, actual_num_wavenumbers_in_sample);
-        end
+        % For AND outliers, the type will always be "T2&Q" by definition
+        dataTableTrain_cleaned_strategies.OutlierTypeInSample_AND{i} = repmat({'T2&Q'}, sum(outlier_status_AND_this_probe), 1);
     end
 
-    newTableFilename_mat = strcat(datePrefix, '_dataTableTrain_CleanedAndOutliers_T2Q.mat'); % Angepasster Name
-    save(fullfile(resultsDir, newTableFilename_mat), 'dataTableTrain_cleaned');
-    disp(['New table with per-sample cleaned spectra and T2/Q outlier details saved as: ' fullfile(resultsDir, newTableFilename_mat)]);
+    % Save the enhanced table
+    newTableFilename_mat = strcat(datePrefix, '_dataTableTrain_Cleaned_OR_AND_Strategies.mat');
+    save(fullfile(resultsDir, newTableFilename_mat), 'dataTableTrain_cleaned_strategies', '-v7.3');
+    disp(['Enhanced table with OR & AND strategy results saved as: ' fullfile(resultsDir, newTableFilename_mat)]);
 
-    % Excel overview
-    newTableFilename_xlsx = strcat(datePrefix, '_dataTableTrain_CleanedAndOutliers_T2Q_Overview.xlsx');
+    % Excel overview (can be expanded)
+    overviewFilename_xlsx = strcat(datePrefix, '_dataTableTrain_Cleaned_OR_AND_Strategies_Overview.xlsx');
     try
-        dataTableTrain_cleaned_for_excel = dataTableTrain_cleaned;
-        dataTableTrain_cleaned_for_excel.NumOriginalSpectra = cellfun(@(x) size(x,1), dataTableTrain.CombinedSpectra); % Originalanzahl
-        dataTableTrain_cleaned_for_excel.NumCleanedSpectra = cellfun(@(x) size(x,1), dataTableTrain_cleaned.CombinedSpectra);
-        dataTableTrain_cleaned_for_excel.NumOutlierSpectra = cellfun(@(x) size(x,1), dataTableTrain_cleaned.OutlierSpectra);
-        dataTableTrain_cleaned_for_excel.OutlierIndicesInSample_str = cellfun(@(x) num2str(x(:)'), dataTableTrain_cleaned.OutlierIndicesInSample, 'UniformOutput', false);
-        dataTableTrain_cleaned_for_excel.OutlierTypeInSample_str = cellfun(@(x) strjoin(x,', '), dataTableTrain_cleaned.OutlierTypeInSample, 'UniformOutput', false);
-
-
-        defaultColsToRemoveForExcel = {'CombinedSpectra', 'OutlierSpectra', 'PositionSpectra', 'CombinedRawSpectra', 'MeanSpectrum', 'OutlierIndicesInSample', 'OutlierTypeInSample'};
-        colsInTable = dataTableTrain_cleaned_for_excel.Properties.VariableNames;
-        colsToRemoveForExcel = intersect(defaultColsToRemoveForExcel, colsInTable);
+        overviewTable = dataTableTrain_cleaned_strategies;
+        overviewTable.NumOriginalSpectra = cellfun(@(x) size(x,1), dataTableTrain.CombinedSpectra); % From original table
         
-        varsToExport = setdiff(colsInTable, colsToRemoveForExcel, 'stable');
-        newSummaryCols = {'NumOriginalSpectra', 'NumCleanedSpectra', 'NumOutlierSpectra', 'OutlierIndicesInSample_str', 'OutlierTypeInSample_str'};
-        newSummaryCols = newSummaryCols(ismember(newSummaryCols, colsInTable)); 
-        varsToExport = [varsToExport, newSummaryCols];
-        varsToExport = unique(varsToExport, 'stable'); 
+        overviewTable.OutlierIndicesInSample_OR_str = cellfun(@(x) num2str(x(:)'), overviewTable.OutlierIndicesInSample_OR, 'UniformOutput', false);
+        overviewTable.OutlierTypeInSample_OR_str = cellfun(@(x) strjoin(x,', '), overviewTable.OutlierTypeInSample_OR, 'UniformOutput', false);
+        overviewTable.OutlierIndicesInSample_AND_str = cellfun(@(x) num2str(x(:)'), overviewTable.OutlierIndicesInSample_AND, 'UniformOutput', false);
+        overviewTable.OutlierTypeInSample_AND_str = cellfun(@(x) strjoin(x,', '), overviewTable.OutlierTypeInSample_AND, 'UniformOutput', false);
 
-        writetable(dataTableTrain_cleaned_for_excel(:, varsToExport), fullfile(resultsDir, newTableFilename_xlsx));
-        disp(['Overview of the new table (T2/Q metadata only) saved as: ' fullfile(resultsDir, newTableFilename_xlsx)]);
+        colsToKeepForExcel = {'Diss_ID', 'Patient_ID', 'WHO_Grade', 'NumOriginalSpectra', ...
+                              'NumSpectra_OR', 'NumOutliers_OR', 'OutlierIndicesInSample_OR_str', 'OutlierTypeInSample_OR_str', ...
+                              'NumSpectra_AND', 'NumOutliers_AND', 'OutlierIndicesInSample_AND_str', 'OutlierTypeInSample_AND_str'};
+        
+        % Ensure all selected columns exist to prevent error
+        colsToKeepForExcel = colsToKeepForExcel(ismember(colsToKeepForExcel, overviewTable.Properties.VariableNames));
+                              
+        writetable(overviewTable(:, colsToKeepForExcel), fullfile(resultsDir, overviewFilename_xlsx));
+        disp(['Overview of enhanced table saved to Excel: ' fullfile(resultsDir, overviewFilename_xlsx)]);
     catch ME_excel
-        disp(['Could not save Excel overview of detailed table: ' ME_excel.message]);
+        disp(['Could not save Excel overview of enhanced table: ' ME_excel.message]);
     end
-    disp('--- Creation of detailed cleaned table (T2/Q) completed. ---');
+    disp('--- Creation of detailed table with OR & AND strategies completed. ---');
 end
 
-disp('Outlier Detection Script (with T2 and Q-Statistic) Finished.');
+disp('Unified Outlier Detection Script (T2/Q OR and AND strategies) Finished.');
 
 %%
 % Insert this within %% --- 9. Visualize Results ---

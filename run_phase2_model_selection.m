@@ -11,73 +11,60 @@
 % Date: 2025-05-15 (Updated with fscmrmr fix)
 
 %% 0. Initialization
-% =========================================================================
-clear; clc; close all;
+% ... (your existing setup) ...
 fprintf('PHASE 2: Model and Feature Selection - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-% IMPORTANT USER ACTION: Before running this script,
-% ensure MATLAB's "Current Folder" is set to your main project root directory
-% (e.g., 'C:\...\meningioma-ftir-classification').
+% +++ NEW: CHOOSE OUTLIER STRATEGY FOR THIS RUN +++
+% outlierStrategy = 'OR'; % Options: 'OR' or 'AND'
+outlierStrategy = 'AND'; % Or set this from a config file P.outlier_cleaning_for_phase2
 
-projectRoot = pwd; % Assumes current working directory IS the project root.
+fprintf('--- Using outlier removal strategy: T2 %s Q ---\n', outlierStrategy);
+% ++++++++++++++++++++++++++++++++++++++++++++++++++
 
-% Validate that we are likely in the project root by checking for 'src' and 'data' subfolders
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory (the one containing ''src'' and ''data'' folders) before running. ' ...
-           'Current directory is: %s'], projectRoot);
-end
-
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''. Please check your project structure and ensure this script is in the ''src'' directory.', srcPath);
-end
-addpath(helperFunPath);
-
-% Define other paths relative to projectRoot
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase2');
-modelsPath    = fullfile(projectRoot, 'models', 'Phase2');
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase2');
-
-% Create output directories if they don't exist
-if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
-if ~exist(modelsPath, 'dir'), mkdir(modelsPath); end
-if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
-
-% --- Output File Naming ---
-dateStr = string(datetime('now','Format','yyyyMMdd'));
+% ... (paths setup) ...
+dateStr = string(datetime('now','Format','yyyyMMdd')); % Keep local dateStr for output naming
 
 %% 1. Load Data
-% =========================================================================
-fprintf('Loading training data...\n');
-% This file should contain:
-% X_train_no_outliers: (N_spectra x N_features double) Spectral data
-% y_train_numeric_no_outliers: (N_spectra x 1 double) Class labels (1 for WHO-1, 3 for WHO-3)
-% patientIDs_train_no_outliers: (N_spectra x 1 cell/string) Probe IDs (e.g., 'MEN-XX-YY')
-inputDataFile = fullfile(dataPath, 'training_set_no_outliers_T2Q.mat'); % YOUR FILE NAME
+% ...
+if strcmpi(outlierStrategy, 'OR')
+    inputDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
+elseif strcmpi(outlierStrategy, 'AND')
+    inputDataFilePattern = '*_training_set_no_outliers_T2andQ.mat';
+else
+    error('Invalid outlierStrategy specified. Choose "OR" or "AND".');
+end
+
+cleanedDataFiles = dir(fullfile(dataPath, inputDataFilePattern));
+if isempty(cleanedDataFiles)
+    error('No cleaned training set file found for strategy "%s" in %s matching pattern %s', ...
+          outlierStrategy, dataPath, inputDataFilePattern);
+end
+[~,idxSortCleaned] = sort([cleanedDataFiles.datenum],'descend');
+inputDataFile = fullfile(dataPath, cleanedDataFiles(idxSortCleaned(1)).name);
+fprintf('Loading cleaned training data (Strategy: %s) from: %s\n', outlierStrategy, inputDataFile);
 
 try
-    loadedData = load(inputDataFile, ...
-                       'X_train_no_outliers', 'y_train_numeric_no_outliers', ...
-                       'patientIDs_train_no_outliers');
-    X_train_full = loadedData.X_train_no_outliers;
-    y_train_full = loadedData.y_train_numeric_no_outliers;
-    probeIDs_train_full = loadedData.patientIDs_train_no_outliers;
-
-    wavenumbers_data = load(fullfile(dataPath, 'wavenumbers.mat'), 'wavenumbers_roi');
-    wavenumbers_original = wavenumbers_data.wavenumbers_roi;
-
-    fprintf('Data loaded successfully: %d spectra, %d features.\n', ...
-            size(X_train_full, 1), size(X_train_full, 2));
-    fprintf('Unique probe IDs in training set: %d\n', length(unique(probeIDs_train_full)));
+    if strcmpi(outlierStrategy, 'OR')
+        loadedData = load(inputDataFile, ...
+                           'X_train_no_outliers_OR', 'y_train_numeric_no_outliers_OR', ...
+                           'Patient_ID_train_no_outliers_OR', 'wavenumbers_roi');
+        X_train_full = loadedData.X_train_no_outliers_OR;
+        y_train_full = loadedData.y_train_numeric_no_outliers_OR; % Ensure this is numeric for CV
+        probeIDs_train_full = loadedData.Patient_ID_train_no_outliers_OR;
+    else % AND strategy
+        loadedData = load(inputDataFile, ...
+                           'X_train_no_outliers_AND', 'y_train_numeric_no_outliers_AND', ...
+                           'Patient_ID_train_no_outliers_AND', 'wavenumbers_roi');
+        X_train_full = loadedData.X_train_no_outliers_AND;
+        y_train_full = loadedData.y_train_numeric_no_outliers_AND; % Ensure this is numeric
+        probeIDs_train_full = loadedData.Patient_ID_train_no_outliers_AND;
+    end
+    
+    wavenumbers_original = loadedData.wavenumbers_roi; % Common
+    % ... rest of your data loading/verification ...
 catch ME
     fprintf('ERROR loading data from %s: %s\n', inputDataFile, ME.message);
-    fprintf('Please ensure the file exists and contains variables: X_train_no_outliers, y_train_numeric_no_outliers, patientIDs_train_no_outliers.\n');
-    return;
+    rethrow(ME);
 end
 
 %% 2. Define Cross-Validation Parameters
@@ -396,7 +383,7 @@ end
 
 %% 5. Select Best Overall Pipeline and Save Results
 % =========================================================================
-fprintf('\n--- Selecting Best Overall Pipeline ---\n');
+fprintf('\n--- Selecting Best Overall Pipeline (Outlier Strategy: %s) ---\n', outlierStrategy); % Added strategy to log
 bestF2Score = -Inf;
 bestPipelineIdx = -1;
 f2_idx = find(strcmpi(metricNames, 'F2_WHO3')); % Use strcmpi for case-insensitivity
@@ -420,21 +407,22 @@ end
 
 if bestPipelineIdx > 0
     bestPipelineSummary = allPipelinesResults{bestPipelineIdx};
-    fprintf('\nBest Pipeline: %s with Mean F2_WHO3 = %.4f\n', ...
-        bestPipelineSummary.pipelineConfig.name, bestF2Score);
+    fprintf('\nBest Pipeline (Outlier Strategy: %s): %s with Mean F2_WHO3 = %.4f\n', ...
+        outlierStrategy, bestPipelineSummary.pipelineConfig.name, bestF2Score); % Added strategy to log
 else
-    fprintf('\nNo suitable pipeline found or error in evaluation.\n');
+    fprintf('\nNo suitable pipeline found or error in evaluation (Outlier Strategy: %s).\n', outlierStrategy); % Added strategy
     bestPipelineSummary = [];
 end
 
-resultsFilename = fullfile(resultsPath, sprintf('%s_Phase2_AllPipelineResults.mat', dateStr));
-save(resultsFilename, 'allPipelinesResults', 'pipelines', 'bestPipelineSummary', 'metricNames', 'numOuterFolds', 'numInnerFolds');
-fprintf('All Phase 2 pipeline results saved to: %s\n', resultsFilename);
+% --- MODIFIED FILENAMES ---
+resultsFilename = fullfile(resultsPath, sprintf('%s_Phase2_AllPipelineResults_Strat_%s.mat', dateStr, outlierStrategy));
+save(resultsFilename, 'allPipelinesResults', 'pipelines', 'bestPipelineSummary', 'metricNames', 'numOuterFolds', 'numInnerFolds', 'outlierStrategy'); % Added outlierStrategy to saved vars
+fprintf('All Phase 2 pipeline results (Outlier Strategy: %s) saved to: %s\n', outlierStrategy, resultsFilename);
 
 if ~isempty(bestPipelineSummary)
-    bestModelInfoFilename = fullfile(modelsPath, sprintf('%s_Phase2_BestPipelineInfo.mat', dateStr));
-    save(bestModelInfoFilename, 'bestPipelineSummary');
-    fprintf('Best pipeline info saved to: %s\n', bestModelInfoFilename);
+    bestModelInfoFilename = fullfile(modelsPath, sprintf('%s_Phase2_BestPipelineInfo_Strat_%s.mat', dateStr, outlierStrategy));
+    save(bestModelInfoFilename, 'bestPipelineSummary', 'outlierStrategy'); % Added outlierStrategy to saved vars
+    fprintf('Best pipeline info (Outlier Strategy: %s) saved to: %s\n', outlierStrategy, bestModelInfoFilename);
 end
 
 %% 6. Visualization (Basic Example)
@@ -443,11 +431,11 @@ if ~isempty(allPipelinesResults) && bestPipelineIdx > 0 && ~isempty(f2_idx)
     try
         validPipelineIndices = find(cellfun(@(res) ~isempty(res) && isstruct(res) && isfield(res, 'outerFoldMetrics_mean') && length(res.outerFoldMetrics_mean) >= f2_idx, allPipelinesResults));
         if isempty(validPipelineIndices)
-            fprintf('No valid pipeline results to plot.\n');
+            fprintf('No valid pipeline results to plot (Outlier Strategy: %s).\n', outlierStrategy); % Added strategy
         else
-            figure('Name', 'Pipeline Comparison - F2 Score (WHO-3)', 'Position', [100, 100, 800, 600]);
+            figCompare = figure('Name', sprintf('Pipeline Comparison (Strategy: %s) - F2 Score (WHO-3)', outlierStrategy), 'Position', [100, 100, 800, 600]); % Added strategy to figure name
             
-            pipelineNamesToPlot = cellfun(@(p) p.name, pipelines(validPipelineIndices), 'UniformOutput', false); % Access .name from struct within cell
+            pipelineNamesToPlot = cellfun(@(p) p.name, pipelines(validPipelineIndices), 'UniformOutput', false);
             meanF2ScoresToPlot = cellfun(@(res) res.outerFoldMetrics_mean(f2_idx), allPipelinesResults(validPipelineIndices));
             stdF2ScoresToPlot = cellfun(@(res) res.outerFoldMetrics_std(f2_idx), allPipelinesResults(validPipelineIndices));
 
@@ -459,19 +447,20 @@ if ~isempty(allPipelinesResults) && bestPipelineIdx > 0 && ~isempty(f2_idx)
             xticklabels(pipelineNamesToPlot);
             xtickangle(45);
             ylabel(sprintf('Mean %s', strrep(metricNames{f2_idx}, '_', ' ')));
-            title('Comparison of Pipelines (Nested CV Performance)');
+            title(sprintf('Comparison of Pipelines (Nested CV Performance - Strategy: %s)', outlierStrategy), 'FontWeight','normal'); % Added strategy to title
             grid on;
             hold off;
             
-            figFilenameBase = fullfile(figuresPath, sprintf('%s_Phase2_PipelineComparison_F2Score', dateStr));
-            savefig(gcf, [figFilenameBase, '.fig']);
-            exportgraphics(gcf, [figFilenameBase, '.tiff'], 'Resolution', 300);
-            fprintf('Pipeline comparison plot saved to: %s.(fig/tiff)\n', figFilenameBase);
+            % --- MODIFIED FILENAME ---
+            figFilenameBase = fullfile(figuresPath, sprintf('%s_Phase2_PipelineComparison_F2Score_Strat_%s', dateStr, outlierStrategy));
+            savefig(figCompare, [figFilenameBase, '.fig']); % Use figCompare handle
+            exportgraphics(figCompare, [figFilenameBase, '.tiff'], 'Resolution', 300); % Use figCompare handle
+            fprintf('Pipeline comparison plot (Outlier Strategy: %s) saved to: %s.(fig/tiff)\n', outlierStrategy, figFilenameBase);
         end
     catch ME_plot
-        fprintf('Error during plotting: %s\n', ME_plot.message);
-        disp(ME_plot.getReport); % Display more details on plot error
+        fprintf('Error during plotting (Outlier Strategy: %s): %s\n', outlierStrategy, ME_plot.message); % Added strategy
+        disp(ME_plot.getReport); 
     end
 end
 
-fprintf('\nPHASE 2 Processing Complete: %s\n', string(datetime('now')));
+fprintf('\nPHASE 2 Processing Complete (Outlier Strategy: %s): %s\n', outlierStrategy, string(datetime('now'))); % Added strategy
