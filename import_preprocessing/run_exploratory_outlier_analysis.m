@@ -209,26 +209,98 @@ if num_pcs_for_loadings > 0 && ~isempty(coeff)
 else, fprintf('Skipping Plot 5 (Loadings) as k_model is 0 or coeffs empty.\n'); end
 
 % PLOT 6: Tiled Layout of Spectra for Distinct Outlier Categories (Revised Mean Line)
-% (Code for this from previous response, with black mean line brought to front)
 fig6 = figure('Name', 'Spectra of Distinct Outlier Categories'); fig6.Position = [120 120 700 850];
-tl6 = tiledlayout(3,1,'TileSpacing','compact','Padding','compact'); 
+tl6 = tiledlayout(3,1,'TileSpacing','compact','Padding','compact');
 sgtitle(tl6,'Spectra by Distinct Outlier Category','FontWeight','Normal', 'FontSize', P.plotFontSize+1);
 outlier_cats_plot6 = {{'Q-only Flagged',is_Q_only,P.colorQOutlierFlag},{'T2-only Flagged',is_T2_only,P.colorT2OutlierFlag},{'T2&Q Flagged (Consensus)',is_T2_and_Q,P.colorBothOutlierFlag}};
-for cat_idx=1:3, ax_cat=nexttile(tl6);hold(ax_cat,'on');cat_title_base=outlier_cats_plot6{cat_idx}{1};cat_flag=outlier_cats_plot6{cat_idx}{2};cat_color_lines=outlier_cats_plot6{cat_idx}{3};
-    spectra_cat=X(cat_flag,:);num_cat=sum(cat_flag);hdl_cat_mean=[];
+for cat_idx=1:3
+    ax_cat=nexttile(tl6);
+    hold(ax_cat,'on');
+    cat_title_base=outlier_cats_plot6{cat_idx}{1};
+    cat_flag=outlier_cats_plot6{cat_idx}{2};
+    cat_color_lines=outlier_cats_plot6{cat_idx}{3};
+    
+    spectra_cat=X(cat_flag,:);
+    num_cat=sum(cat_flag);
+    hdl_cat_mean=[];
+    
     if num_cat>0
         plot(ax_cat,wavenumbers_roi,spectra_cat','Color',[cat_color_lines,0.1],'LineWidth',0.5,'HandleVisibility','off'); % Fainter individual lines
         mean_spec=mean(spectra_cat,1,'omitnan');
-        if any(~isnan(mean_spec)),hdl_cat_mean=plot(ax_cat,wavenumbers_roi,mean_spec,'Color','k','LineWidth',1.5,'DisplayName',sprintf('Mean (n=%d)',num_cat)); uistack(hdl_cat_mean,'top'); end % Black mean on top
-    else, text(0.5,0.5,'No spectra','Parent',ax_cat,'HorizontalAlignment','center');end
-    hold(ax_cat,'off');title(ax_cat,sprintf('%s (n=%d)',cat_title_base,num_cat),'FontWeight','normal');ylabel(ax_cat,P.plotYLabelAbsorption);set(ax_cat,'XDir','reverse','XLim',P.plotXLim,'FontSize',P.plotFontSize-1);grid(ax_cat,'on');
-    if cat_idx<3,set(ax_cat,'XTickLabel',[]);else,xlabel(ax_cat,P.plotXLabel);end
-    if ~isempty(hdl_cat_mean) && isgraphics(hdl_cat_mean),legend(ax_cat,hdl_cat_mean,'Location','northeast','FontSize',P.plotFontSize-2);end
+        if any(~isnan(mean_spec))
+            hdl_cat_mean=plot(ax_cat,wavenumbers_roi,mean_spec,'Color','k','LineWidth',1.5,'DisplayName',sprintf('Mean (n=%d)',num_cat));
+            uistack(hdl_cat_mean,'top'); % Black mean on top
+        end
+    else
+        text(0.5,0.5,'No spectra','Parent',ax_cat,'HorizontalAlignment','center');
+    end
+    hold(ax_cat,'off');
+    title(ax_cat,sprintf('%s (n=%d)',cat_title_base,num_cat),'FontWeight','normal');
+    ylabel(ax_cat,P.plotYLabelAbsorption);
+    set(ax_cat,'XDir','reverse','XLim',P.plotXLim,'FontSize',P.plotFontSize-1);
+    grid(ax_cat,'on');
+    
+    if cat_idx<3
+        set(ax_cat,'XTickLabel',[]);
+    else
+        xlabel(ax_cat,P.plotXLabel);
+    end
+    
+    if ~isempty(hdl_cat_mean) && isgraphics(hdl_cat_mean)
+        legend(ax_cat,hdl_cat_mean,'Location','northeast','FontSize',P.plotFontSize-2);
+    end
 end
-drawnow; pause(0.1); % Ensure drawing complete
+
+% --- Saving Plot 6 with enhanced error handling ---
+drawnow; pause(0.2); % Ensure drawing complete, increased pause slightly
+
+tiffFile6 = fullfile(figuresDir, sprintf('%s_Vis6_OutlierCategory_Spectra.tiff', P.datePrefix));
+figFile6 = fullfile(figuresDir, sprintf('%s_Vis6_OutlierCategory_Spectra.fig', P.datePrefix));
+
 if isvalid(fig6) && isgraphics(fig6,'figure')
-    exportgraphics(fig6,fullfile(figuresDir,sprintf('%s_Vis6_OutlierCategory_Spectra.tiff',P.datePrefix)),'Resolution',300);savefig(fig6,fullfile(figuresDir,sprintf('%s_Vis6_OutlierCategory_Spectra.fig',P.datePrefix)));fprintf('Plot 6 saved.\n');
-else, warning('Plot 6 (Outlier Category Spectra) figure handle invalid before saving.'); end
+    fprintf('fig6 is valid before attempting to save.\n');
+    
+    % Attempt to save TIFF using exportgraphics
+    try
+        exportgraphics(fig6, tiffFile6, 'Resolution', 300);
+        fprintf('Plot 6 TIFF saved successfully using exportgraphics.\n');
+    catch ME_export
+        fprintf('WARNING: exportgraphics failed for Plot 6 TIFF: %s\n', ME_export.message);
+        % disp(ME_export.getReport()); % Optional: for more detailed error
+        
+        % Fallback to print command for TIFF
+        fprintf('Attempting to save Plot 6 TIFF using print command as fallback...\n');
+        if isvalid(fig6) && isgraphics(fig6,'figure') % Re-check validity
+            try
+                print(fig6, tiffFile6, '-dtiff', '-r300');
+                fprintf('Plot 6 TIFF saved successfully using print command.\n');
+            catch ME_print
+                fprintf('ERROR: print command also failed for Plot 6 TIFF: %s\n', ME_print.message);
+                disp(ME_print.getReport());
+            end
+        else
+            warning('Plot 6 (fig6) became invalid before print command could be attempted.');
+        end
+    end
+
+    % Attempt to save .fig file
+    if isvalid(fig6) && isgraphics(fig6,'figure') % Re-check validity
+        fprintf('fig6 is still valid before savefig.\n');
+        try
+            savefig(fig6, figFile6);
+            fprintf('Plot 6 FIG saved successfully.\n');
+        catch ME_savefig
+             fprintf('ERROR saving Plot 6 FIG: %s\n', ME_savefig.message);
+             disp(ME_savefig.getReport());
+        end
+    else
+        warning('Plot 6 (fig6) became invalid before savefig could be called for .fig file.');
+    end
+else
+    warning('Plot 6 (Outlier Category Spectra) figure handle (fig6) was invalid BEFORE attempting to save.');
+end
+
+fprintf('All requested diagnostic visualizations generated.\n'); % This line was already after Plot 6 saving.
 
 fprintf('All requested diagnostic visualizations generated.\n');
 
