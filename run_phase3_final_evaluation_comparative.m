@@ -1,22 +1,22 @@
-% run_phase3_final_evaluation_comparative.m % << NEW FILENAME (Suggestion)
+% run_phase3_final_evaluation_comparative.m
 %
 % Script for Phase 3: Final Model Training & Unbiased Evaluation.
 % MODIFIED to run in parallel for "T2 OR Q" and "T2 AND Q" outlier strategies.
 % 1. For each strategy:
 %    a. Loads the corresponding cleaned training set.
-%    b. Determines (or uses predefined) best hyperparameters for MRMRLDA.
+%    b. Loads (or uses predefined) best hyperparameters for MRMRLDA for that strategy.
 %    c. Trains the MRMRLDA pipeline on the entire strategy-specific training set.
 %    d. Evaluates the final model on the common unseen test set.
 % 2. Saves results and models separately for each strategy.
 %
-% Date: 2025-05-18 (Modified for parallel strategy evaluation)
+% Date: 2025-05-18 (Corrected color definitions and hyperparameter loading path)
 
 %% 0. Initialization
 % =========================================================================
 clear; clc; close all;
 fprintf('PHASE 3: Final Model Training & Unbiased Evaluation (Comparative Strategies) - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
+% --- Define Paths ---
 projectRoot = pwd; 
 if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
     error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
@@ -30,17 +30,23 @@ if ~exist(helperFunPath, 'dir')
 end
 addpath(helperFunPath);
 
-dataPath      = fullfile(projectRoot, 'data');
-phase2ResultsPath = fullfile(projectRoot, 'results', 'Phase2'); % For loading best hyperparameters
-resultsPath_P3   = fullfile(projectRoot, 'results', 'Phase3_Comparative'); % Specific to this comparative Phase 3
-modelsPath_P3    = fullfile(projectRoot, 'models', 'Phase3_Comparative');   % Specific to this comparative Phase 3
-figuresPath_P3   = fullfile(projectRoot, 'figures', 'Phase3_Comparative'); % Specific to this comparative Phase 3
+dataPath         = fullfile(projectRoot, 'data');
+phase2ModelsPath = fullfile(projectRoot, 'models', 'Phase2'); % Corrected path for loading best hyperparameters from Phase 2
+resultsPath_P3   = fullfile(projectRoot, 'results', 'Phase3_Comparative'); 
+modelsPath_P3    = fullfile(projectRoot, 'models', 'Phase3_Comparative');   
+figuresPath_P3   = fullfile(projectRoot, 'figures', 'Phase3_Comparative'); 
 
 if ~exist(resultsPath_P3, 'dir'), mkdir(resultsPath_P3); end
 if ~exist(modelsPath_P3, 'dir'), mkdir(modelsPath_P3); end
 if ~exist(figuresPath_P3, 'dir'), mkdir(figuresPath_P3); end
 
 dateStr = string(datetime('now','Format','yyyyMMdd'));
+
+% --- Define Colors (Needed for plots within this script) ---
+colorWHO1 = [0.9, 0.6, 0.4];         % Orange
+colorWHO3 = [0.4, 0.702, 0.902];    % Blue
+% Add other colors if used by other plots within this specific script
+% colorOutlier = [0.8, 0, 0]; 
 
 % Define Outlier Strategies to process
 outlierStrategies = {'OR', 'AND'};
@@ -63,7 +69,8 @@ for iStrat = 1:length(outlierStrategies)
         if iscolumn(wavenumbers_original), wavenumbers_original = wavenumbers_original'; end
     catch ME_wave
         fprintf('ERROR loading wavenumbers.mat: %s\n', ME_wave.message);
-        continue; % Skip to next strategy if wavenumbers can't be loaded
+        warning('Skipping strategy %s due to error loading wavenumbers.', currentStrategy);
+        continue; 
     end
 
     % --- Load Strategy-Specific Entire Training Set ---
@@ -71,156 +78,159 @@ for iStrat = 1:length(outlierStrategies)
     if strcmp(currentStrategy, 'OR')
         trainingDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
         varName_X = 'X_train_no_outliers_OR';
-        varName_y = 'y_train_no_outliers_OR_num'; % Assuming numeric labels
+        varName_y = 'y_train_no_outliers_OR_num'; 
     elseif strcmp(currentStrategy, 'AND')
         trainingDataFilePattern = '*_training_set_no_outliers_T2andQ.mat';
         varName_X = 'X_train_no_outliers_AND';
-        varName_y = 'y_train_no_outliers_AND_num'; % Assuming numeric labels
+        varName_y = 'y_train_no_outliers_AND_num'; 
     else
-        error('Unknown strategy in loop.');
+        error('Internal error: Unknown outlier strategy "%s" in loop.', currentStrategy);
     end
     
     trainingDataFiles = dir(fullfile(dataPath, trainingDataFilePattern));
     if isempty(trainingDataFiles)
-        warning('No training set file found for strategy "%s" in %s. Skipping this strategy.', currentStrategy, dataPath);
+        warning('No training set file found for strategy "%s" in %s (pattern: %s). Skipping this strategy.', currentStrategy, dataPath, trainingDataFilePattern);
         continue;
     end
     [~,idxSortTrain] = sort([trainingDataFiles.datenum],'descend');
     latestTrainingDataFile = fullfile(dataPath, trainingDataFiles(idxSortTrain(1)).name);
     
     try
-        loadedTrainingData = load(latestTrainingDataFile, varName_X, varName_y); % Add other vars if needed like Patient_ID
+        loadedTrainingData = load(latestTrainingDataFile, varName_X, varName_y); 
         X_train_full = loadedTrainingData.(varName_X);
         y_train_full = loadedTrainingData.(varName_y);
-        % Ensure y_train_full is numeric and column vector
-        if ~isnumeric(y_train_full), error('y_train_full for strategy %s is not numeric.', currentStrategy); end
+        if ~isnumeric(y_train_full), error('y_train_full for strategy %s is not numeric after loading.', currentStrategy); end
         y_train_full = y_train_full(:);
 
         fprintf('Training data for strategy %s loaded: %d spectra, %d features from %s.\n', ...
             currentStrategy, size(X_train_full, 1), size(X_train_full, 2), latestTrainingDataFile);
-        if isempty(X_train_full), error('X_train_full is empty for strategy %s.', currentStrategy); end
+        if isempty(X_train_full), error('X_train_full is empty for strategy %s after loading.', currentStrategy); end
     catch ME_load_train
         fprintf('ERROR loading training data for strategy %s from %s: %s\n', currentStrategy, latestTrainingDataFile, ME_load_train.message);
+        warning('Skipping strategy %s due to error loading training data.', currentStrategy);
         continue; 
     end
 
     % --- Load Test Set (common for all strategies) ---
-    % This only needs to be done once if it's outside the loop, or ensure it's correctly handled if inside.
-    % For simplicity, loading it inside, though it's redundant if test set is always the same.
-    fprintf('Loading common test set...\n');
-    testDataFile = fullfile(dataPath, 'data_table_test.mat'); % This should be the original, unprocessed test set table
-    try
-        loadedTestData = load(testDataFile, 'dataTableTest');
-        dataTableTest = loadedTestData.dataTableTest;
-
-        numTestProbes = height(dataTableTest);
-        temp_X_test_list = cell(numTestProbes, 1);
-        temp_y_test_list = cell(numTestProbes, 1);
-        temp_probeIDs_test_list = cell(numTestProbes, 1);
-        
-        totalTestSpectra = 0;
-        for i = 1:numTestProbes
-            % Assuming CombinedSpectra in dataTableTest contains the raw spectra that need the same preprocessing
-            % as applied to the training data (e.g. SG, SNV, L2-norm if done prior to PCA for outlier removal)
-            % OR if CombinedSpectra already contains fully preprocessed spectra.
-            % For now, assume CombinedSpectra is ready for binning/feature selection as per the model.
-            spectraMatrix = dataTableTest.CombinedSpectra{i,1}; 
-            numSpectraThisProbe = size(spectraMatrix, 1);
-            totalTestSpectra = totalTestSpectra + numSpectraThisProbe;
-            temp_X_test_list{i} = spectraMatrix;
-            current_WHO_grade_cat = dataTableTest.WHO_Grade(i);
-            if current_WHO_grade_cat == 'WHO-1', temp_y_test_list{i} = ones(numSpectraThisProbe, 1) * 1;
-            elseif current_WHO_grade_cat == 'WHO-3', temp_y_test_list{i} = ones(numSpectraThisProbe, 1) * 3;
-            else, temp_y_test_list{i} = ones(numSpectraThisProbe, 1) * NaN; end
-            temp_probeIDs_test_list{i} = repmat(dataTableTest.Diss_ID(i), numSpectraThisProbe, 1);
-        end
-        
-        X_test_full = vertcat(temp_X_test_list{:});
-        y_test_full_numeric = vertcat(temp_y_test_list{:});
-        y_test_full_numeric = y_test_full_numeric(:); % Ensure column
-        probeIDs_test_full = vertcat(temp_probeIDs_test_list{:});
-
-        nan_label_idx_test = isnan(y_test_full_numeric);
-        if any(nan_label_idx_test)
-            fprintf('Removing %d test spectra with NaN labels.\n', sum(nan_label_idx_test));
-            X_test_full(nan_label_idx_test,:) = [];
-            y_test_full_numeric(nan_label_idx_test) = [];
-            probeIDs_test_full(nan_label_idx_test) = [];
-        end
-        fprintf('Test data loaded and processed: %d spectra, %d features from %d probes.\n', ...
-                size(X_test_full, 1), size(X_test_full, 2), numTestProbes);
-        if size(X_test_full,2) ~= size(X_train_full,2) && ~isempty(X_train_full) % Check if X_train_full was loaded
-            error('Mismatch in number of features between training (%d) and test (%d) data before binning.', size(X_train_full,2), size(X_test_full,2));
-        end
-    catch ME_load_test
-        fprintf('ERROR loading or processing test data from %s: %s\n', testDataFile, ME_load_test.message);
-        continue;
-    end
-
-    % --- Define/Load Final Model Hyperparameters for MRMRLDA for the CURRENT STRATEGY ---
-    % OPTION A: Hardcode (as in original script, but less flexible)
-    % final_binningFactor = 8;
-    % final_numMRMRFeatures = 50;
-    % fprintf('Using PREDEFINED hyperparameters for MRMRLDA: Binning Factor = %d, Num MRMR Features = %d\n', ...
-    %    final_binningFactor, final_numMRMRFeatures);
-
-    % OPTION B: Load best hyperparameters from Phase 2 for the current strategy
-    fprintf('Loading best hyperparameters for MRMRLDA (Strategy: %s) from Phase 2 results...\n', currentStrategy);
-    bestHyperparamFile = fullfile(phase2ResultsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_%s.mat', currentStrategy));
-    bestHyperparamFiles = dir(bestHyperparamFile);
-    if isempty(bestHyperparamFiles)
-        warning('No Phase 2 best hyperparameter file found for MRMRLDA and strategy %s. Using predefined defaults.', currentStrategy);
-        final_binningFactor = 8; % Default
-        final_numMRMRFeatures = 50; % Default
-    else
-        [~,idxSortHP] = sort([bestHyperparamFiles.datenum],'descend');
-        latestBestHPFile = fullfile(phase2ResultsPath, bestHyperparamFiles(idxSortHP(1)).name);
+    % Load once if not already loaded in the session (outside the loop)
+    if iStrat == 1 % Only load test set on the first strategy iteration
+        fprintf('Loading common test set...\n');
+        testDataFile = fullfile(dataPath, 'data_table_test.mat'); 
         try
-            loadedHP = load(latestBestHPFile, 'bestPipelineSummary_strat');
-            % Assuming 'MRMRLDA' was the best. If not, this logic needs to find it.
-            % And assuming 'bestPipelineSummary_strat.outerFoldBestHyperparams' contains the chosen ones.
-            % For simplicity, let's assume 'bestPipelineSummary_strat.pipelineConfig' holds the final single choice from Phase 2,
-            % or we extract the mode of outerFoldBestHyperparams.
-            % The current `run_phase2_model_selection_comparative.m` saves `bestPipelineSummary_strat`
-            % which has `outerFoldBestHyperparams` (a cell array, one per outer fold).
-            % We need to determine the *single* final hyperparameter set.
-            % Let's take the mode of the selected binning factors and MRMR features from the outer folds.
+            loadedTestData = load(testDataFile, 'dataTableTest');
+            dataTableTest = loadedTestData.dataTableTest; % Keep this name
 
-            all_binning_factors_p2 = [];
-            all_mrmr_features_p2 = [];
-            for k_hp = 1:length(loadedHP.bestPipelineSummary_strat.outerFoldBestHyperparams)
-                if isfield(loadedHP.bestPipelineSummary_strat.outerFoldBestHyperparams{k_hp}, 'binningFactor')
-                    all_binning_factors_p2 = [all_binning_factors_p2; loadedHP.bestPipelineSummary_strat.outerFoldBestHyperparams{k_hp}.binningFactor];
-                end
-                if isfield(loadedHP.bestPipelineSummary_strat.outerFoldBestHyperparams{k_hp}, 'numMRMRFeatures')
-                    all_mrmr_features_p2 = [all_mrmr_features_p2; loadedHP.bestPipelineSummary_strat.outerFoldBestHyperparams{k_hp}.numMRMRFeatures];
-                end
+            numTestProbes_global = height(dataTableTest); % Use a distinct name
+            temp_X_test_list_global = cell(numTestProbes_global, 1);
+            temp_y_test_list_global = cell(numTestProbes_global, 1);
+            temp_probeIDs_test_list_global = cell(numTestProbes_global, 1);
+            
+            for i_test = 1:numTestProbes_global
+                spectraMatrix_test = dataTableTest.CombinedSpectra{i_test,1}; 
+                numSpectraThisProbe_test = size(spectraMatrix_test, 1);
+                temp_X_test_list_global{i_test} = spectraMatrix_test;
+                current_WHO_grade_cat_test = dataTableTest.WHO_Grade(i_test);
+                if current_WHO_grade_cat_test == 'WHO-1', temp_y_test_list_global{i_test} = ones(numSpectraThisProbe_test, 1) * 1;
+                elseif current_WHO_grade_cat_test == 'WHO-3', temp_y_test_list_global{i_test} = ones(numSpectraThisProbe_test, 1) * 3;
+                else, temp_y_test_list_global{i_test} = ones(numSpectraThisProbe_test, 1) * NaN; end
+                temp_probeIDs_test_list_global{i_test} = repmat(dataTableTest.Diss_ID(i_test), numSpectraThisProbe_test, 1);
             end
             
-            if ~isempty(all_binning_factors_p2)
-                final_binningFactor = mode(all_binning_factors_p2);
-            else
-                warning('No binning factors found in Phase 2 best hyperparams for %s. Using default 8.', currentStrategy);
-                final_binningFactor = 8;
-            end
-            if ~isempty(all_mrmr_features_p2)
-                final_numMRMRFeatures = mode(all_mrmr_features_p2);
-            else
-                warning('No numMRMRFeatures found in Phase 2 best hyperparams for %s. Using default 50.', currentStrategy);
-                final_numMRMRFeatures = 50;
-            end
-             fprintf('Using hyperparameters for MRMRLDA (Strategy %s) from Phase 2: Binning=%d, MRMR Feats=%d (Mode from outer folds of best pipeline)\n', ...
-                 currentStrategy, final_binningFactor, final_numMRMRFeatures);
+            X_test_full_global = vertcat(temp_X_test_list_global{:});
+            y_test_full_numeric_global = vertcat(temp_y_test_list_global{:});
+            y_test_full_numeric_global = y_test_full_numeric_global(:); 
+            probeIDs_test_full_global = vertcat(temp_probeIDs_test_list_global{:});
 
+            nan_label_idx_test_global = isnan(y_test_full_numeric_global);
+            if any(nan_label_idx_test_global)
+                fprintf('Removing %d test spectra with NaN labels.\n', sum(nan_label_idx_test_global));
+                X_test_full_global(nan_label_idx_test_global,:) = [];
+                y_test_full_numeric_global(nan_label_idx_test_global) = [];
+                probeIDs_test_full_global(nan_label_idx_test_global) = [];
+            end
+            fprintf('Test data loaded and processed: %d spectra, %d features from %d probes.\n', ...
+                    size(X_test_full_global, 1), size(X_test_full_global, 2), numTestProbes_global);
+        catch ME_load_test
+            fprintf('ERROR loading or processing common test data from %s: %s\n', testDataFile, ME_load_test.message);
+            error('Cannot proceed without test data.'); % Critical error
+        end
+    end
+    % Use the globally loaded test set for each strategy iteration
+    X_test_full = X_test_full_global;
+    y_test_full_numeric = y_test_full_numeric_global;
+    probeIDs_test_full = probeIDs_test_full_global;
+
+    if ~isempty(X_train_full) && size(X_test_full,2) ~= size(X_train_full,2) 
+        error('Mismatch in number of features between current training set (Strategy %s: %d) and test set (%d) before binning.', ...
+            currentStrategy, size(X_train_full,2), size(X_test_full,2));
+    end
+
+
+    % --- Define/Load Final Model Hyperparameters for MRMRLDA for the CURRENT STRATEGY ---
+    fprintf('Loading best hyperparameters for MRMRLDA (Strategy: %s) from Phase 2 model info...\n', currentStrategy);
+    % Corrected path to 'models/Phase2/'
+    bestHyperparamFilePattern = fullfile(phase2ModelsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_%s.mat', currentStrategy));
+    bestHyperparamFiles = dir(bestHyperparamFilePattern);
+    
+    final_binningFactor = 8; % Default
+    final_numMRMRFeatures = 50; % Default
+
+    if isempty(bestHyperparamFiles)
+        warning('No Phase 2 best hyperparameter file found in %s for MRMRLDA and strategy %s using pattern "%s". Using predefined defaults (Binning: %d, MRMR Feats: %d).', ...
+            phase2ModelsPath, currentStrategy, sprintf('*_Phase2_BestPipelineInfo_Strat_%s.mat', currentStrategy), final_binningFactor, final_numMRMRFeatures);
+    else
+        [~,idxSortHP] = sort([bestHyperparamFiles.datenum],'descend');
+        latestBestHPFile = fullfile(phase2ModelsPath, bestHyperparamFiles(idxSortHP(1)).name);
+        fprintf('Loading best hyperparameters from: %s\n', latestBestHPFile);
+        try
+            loadedHPData = load(latestBestHPFile, 'bestPipelineSummary_strat');
+            bestPipelineSummary = loadedHPData.bestPipelineSummary_strat;
+
+            if strcmpi(bestPipelineSummary.pipelineConfig.name, 'MRMRLDA')
+                all_binning_factors_p2 = [];
+                all_mrmr_features_p2 = [];
+                if isfield(bestPipelineSummary, 'outerFoldBestHyperparams') && iscell(bestPipelineSummary.outerFoldBestHyperparams)
+                    for k_hp = 1:length(bestPipelineSummary.outerFoldBestHyperparams)
+                        if ~isempty(bestPipelineSummary.outerFoldBestHyperparams{k_hp}) % Check if cell is not empty
+                            if isfield(bestPipelineSummary.outerFoldBestHyperparams{k_hp}, 'binningFactor')
+                                all_binning_factors_p2 = [all_binning_factors_p2; bestPipelineSummary.outerFoldBestHyperparams{k_hp}.binningFactor];
+                            end
+                            if isfield(bestPipelineSummary.outerFoldBestHyperparams{k_hp}, 'numMRMRFeatures')
+                                all_mrmr_features_p2 = [all_mrmr_features_p2; bestPipelineSummary.outerFoldBestHyperparams{k_hp}.numMRMRFeatures];
+                            end
+                        end
+                    end
+                end
+                
+                if ~isempty(all_binning_factors_p2)
+                    final_binningFactor = mode(all_binning_factors_p2);
+                else
+                    warning('No binning factors found in loaded bestPipelineSummary_strat for MRMRLDA, strategy %s. Using predefined default %d.', currentStrategy, final_binningFactor);
+                end
+                if ~isempty(all_mrmr_features_p2)
+                    final_numMRMRFeatures = mode(all_mrmr_features_p2);
+                else
+                    warning('No numMRMRFeatures found in loaded bestPipelineSummary_strat for MRMRLDA, strategy %s. Using predefined default %d.', currentStrategy, final_numMRMRFeatures);
+                end
+                fprintf('Using hyperparameters for MRMRLDA (Strategy %s) from Phase 2: Binning=%d, MRMR Feats=%d\n', ...
+                         currentStrategy, final_binningFactor, final_numMRMRFeatures);
+            else
+                warning('The best pipeline found in Phase 2 for strategy %s was %s, not MRMRLDA. Using predefined defaults for MRMRLDA (Binning: %d, MRMR Feats: %d).', ...
+                        currentStrategy, bestPipelineSummary.pipelineConfig.name, final_binningFactor, final_numMRMRFeatures);
+            end
         catch ME_loadHP
-            fprintf('ERROR loading best hyperparameters for strategy %s: %s. Using predefined defaults.\n', currentStrategy, ME_loadHP.message);
-            final_binningFactor = 8; % Default
-            final_numMRMRFeatures = 50; % Default
+            fprintf('ERROR loading/processing best hyperparameters for strategy %s from %s: %s. Using predefined defaults (Binning: %d, MRMR Feats: %d).\n', ...
+                currentStrategy, latestBestHPFile, ME_loadHP.message, final_binningFactor, final_numMRMRFeatures);
         end
     end
     
     % --- Define Metric Names ---
     metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'};
+    
+    % ... (The rest of Section 2, 3, 4, 5, 6 for the currentStrategy would follow here) ...
+    % Ensure all filenames for saving incorporate 'currentStrategy'
+    
+% End of Section 1 within the loop
 
     %% 2. Train Final Model on Entire Strategy-Specific Training Set (MRMRLDA)
     % =========================================================================
