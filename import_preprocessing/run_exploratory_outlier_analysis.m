@@ -34,7 +34,7 @@ figuresDir = fullfile(projectBasePath, 'figures', 'Phase1_OutlierExploration'); 
 if ~isfolder(resultsDir), mkdir(resultsDir); end
 if ~isfolder(figuresDir), mkdir(figuresDir); end
 
-P.alpha_T2_Q = 0.01; % Single alpha for T2 and Q for this exploratory run
+P.alpha_T2_Q = 0.05; % Single alpha for T2 and Q for this exploratory run
 P.variance_to_explain_for_PCA_model = 0.95;
 P.datePrefix = string(datetime('now','Format','yyyyMMdd')); % For output filenames
 P.colorWHO1 = [0.9, 0.6, 0.4]; P.colorWHO3 = [0.4, 0.702, 0.902];
