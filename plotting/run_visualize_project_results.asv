@@ -3,7 +3,7 @@
 % Script to generate key visualizations for Phase 2, 3, and 4 of the
 % meningioma FT-IR classification project.
 %
-% Date: 2025-05-18 (Spider plot styling: no main fill, increased tile spacing, label offset)
+% Date: 2025-05-18 (Updates: Tiled spider plots, axis range, std dev shading, new colors, ROC template)
 
 %% 0. Initialization
 fprintf('GENERATING PROJECT VISUALIZATIONS (Phases 2-4) - %s\n', string(datetime('now')));
@@ -21,7 +21,7 @@ resultsPath_P3 = fullfile(resultsPath_main, 'Phase3');
 resultsPath_P4 = fullfile(resultsPath_main, 'Phase4');
 modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
 
-figuresPath_output = fullfile(projectRoot, 'figures', 'ProjectSummaryFigures'); 
+figuresPath_output = fullfile(projectRoot, 'figures', 'ProjectSummaryFigures'); % General project summary
 if ~isfolder(figuresPath_output), mkdir(figuresPath_output); end
 
 comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison_Plots_From_VisualizeScript');
@@ -38,23 +38,27 @@ else
 end
 
 % Plotting Defaults
-plotFontSize = 10; 
-colorStrategyOR = [0.5, 0, 0.5];    % Purple for OR line
-colorStrategyAND = [0, 0.5, 0.5];   % Teal for AND line
-colorStdDevShadeOR = [0.8, 0.65, 0.8]; % Lighter Purple for OR shade
-colorStdDevShadeAND = [0.6, 0.8, 0.8]; % Lighter Teal for AND shade
-colorWHO1 = [0.9, 0.6, 0.4]; 
-colorWHO3 = [0.4, 0.702, 0.902]; 
+plotFontSize = 10;
+% WHO Grade Colors (kept for other plots if needed, but not for strategy comparison spider plots)
+% colorWHO1_orig = [0.9, 0.6, 0.4]; 
+% colorWHO3_orig = [0.4, 0.702, 0.902];
+
+% NEW Colors for Outlier Strategies in Spider Plots
+colorStrategyOR = [0.6, 0.2, 0.8]; % Purple for OR
+colorStrategyAND = [0, 0.6, 0.5];  % Teal for AND
+colorStdDevShadeOR = [0.8, 0.6, 0.9]; % Lighter Purple
+colorStdDevShadeAND = [0.5, 0.8, 0.75]; % Lighter Teal
+
 
 colorTestSet = [0.2 0.6 0.2]; 
 P2_data_loaded_successfully = false; 
 
 %% 1. Load Phase 2 Results (Comparison of Outlier Strategies)
-% ... (This section remains the same as your working version) ...
 fprintf('\n--- 1. Loading Phase 2 Comparison Results ---\n');
+% ... (Data loading code remains the same as your previous version) ...
 overallResultsFiles_P2 = dir(fullfile(comparisonResultsPath_P2, '*_Phase2_OverallComparisonData.mat'));
 if isempty(overallResultsFiles_P2)
-    overallResultsFiles_P2 = dir(fullfile(resultsPath_main, '*_Phase2_OverallComparisonData.mat')); 
+    overallResultsFiles_P2 = dir(fullfile(resultsPath_main, '*_Phase2_OverallComparisonData.mat')); % Fallback
 end
 
 if isempty(overallResultsFiles_P2)
@@ -98,6 +102,58 @@ end
 %% 2. Generate Phase 2 Visualizations
 fprintf('\n--- 2. Generating Phase 2 Visualizations ---\n');
 
+% Helper function for bar charts (remains the same, but uses new strategy colors)
+function makeBarChart(dataOR, dataAND, stdOR, stdAND, pipelineNames, metricName, titleStr, yLabelStr, figNameSuffix, outputPath, datePrefix, strategyPlotColors) % Changed last param name
+    fig = figure('Name', titleStr, 'Position', [100, 100, 1000, 600]);
+    if isempty(dataAND) 
+        bar_data = dataOR;
+        b = bar(bar_data);
+        hold on;
+        errorbar(1:length(dataOR), dataOR, stdOR, 'k.', 'HandleVisibility','off');
+        b(1).FaceColor = strategyPlotColors.OR; % Use the new color
+        legendTxt = {'T2 OR Q Strategy'};
+    else 
+        bar_data = [dataOR, dataAND];
+        b = bar(bar_data);
+        hold on;
+        numGroups = size(bar_data, 1);
+        numBarsPerGroup = size(bar_data, 2);
+        groupWidth = min(0.8, numBarsPerGroup/(numBarsPerGroup + 1.5));
+        for iBar = 1:numBarsPerGroup
+            x_centers = (1:numGroups) - groupWidth/2 + (2*iBar-1) * groupWidth / (2*numBarsPerGroup);
+            if iBar == 1, errorbar(x_centers, dataOR, stdOR, 'k.', 'HandleVisibility','off');
+            else, errorbar(x_centers, dataAND, stdAND, 'k.', 'HandleVisibility','off'); end
+        end
+        b(1).FaceColor = strategyPlotColors.OR; % Use new color
+        b(2).FaceColor = strategyPlotColors.AND; % Use new color
+        legendTxt = {'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'};
+    end
+    hold off;
+    xticks(1:length(pipelineNames)); xticklabels(pipelineNames); xtickangle(45);
+    ylabel(yLabelStr); title({titleStr; '(Error bars: +/-1 Std.Dev. outer CV scores)'}, 'FontWeight', 'normal');
+    legend(legendTxt, 'Location', 'NorthEastOutside'); grid on;
+    % Robust YLim setting (remains the same)
+    all_means = bar_data(~isnan(bar_data));
+    all_stds_or = stdOR(~isnan(stdOR) & ~isnan(dataOR));
+    all_stds_and = []; if ~isempty(dataAND), all_stds_and = stdAND(~isnan(stdAND) & ~isnan(dataAND)); end
+    max_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), max_vals_std = [max_vals_std; dataOR(~isnan(dataOR)) + all_stds_or]; end
+    if ~isempty(dataAND) && ~isempty(all_stds_and), max_vals_std = [max_vals_std; dataAND(~isnan(dataAND)) + all_stds_and]; end
+    if isempty(max_vals_std), max_vals_std = all_means; end; if isempty(max_vals_std), max_vals_std = 0.1; end
+    min_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), min_vals_std = [min_vals_std; dataOR(~isnan(dataOR)) - all_stds_or]; end
+    if ~isempty(dataAND) && ~isempty(all_stds_and), min_vals_std = [min_vals_std; dataAND(~isnan(dataAND)) - all_stds_and]; end
+    if isempty(min_vals_std), min_vals_std = all_means; end; if isempty(min_vals_std), min_vals_std = 0; end
+    upper_y = max(max_vals_std(:),[],'omitnan'); lower_y = min(min_vals_std(:),[],'omitnan');
+    if isempty(upper_y)||isnan(upper_y),upper_y=0.1;end; if isempty(lower_y)||isnan(lower_y),lower_y=0;end
+    pad = (upper_y-lower_y)*0.1; if pad==0||isnan(pad),pad=0.05;end; final_y = [max(0,lower_y-pad),upper_y+pad];
+    if final_y(1)>=final_y(2),final_y=[0,max(0.1,final_y(2)+0.1)];end; ylim(final_y);
+    
+    filenameBase = fullfile(outputPath, sprintf('%s_BarChart_%s', datePrefix, figNameSuffix));
+    exportgraphics(fig, [filenameBase, '.tiff'], 'Resolution', 300);
+    savefig(fig, [filenameBase, '.fig']);
+    fprintf('Bar chart "%s" saved.\n', titleStr);
+    close(fig);
+end
+
 if P2_data_loaded_successfully
     f2_idx_p2 = find(strcmpi(metricNames_P2, 'F2_WHO3'));
     auc_idx_p2 = find(strcmpi(metricNames_P2, 'AUC'));
@@ -122,6 +178,7 @@ if P2_data_loaded_successfully
         end
     end
     
+    % Pass new strategy colors to bar chart helper
     strategyBarColors = struct('OR', colorStrategyOR, 'AND', colorStrategyAND);
 
     makeBarChart(mean_F2_OR, [], std_F2_OR, [], pipelineNamesList_P2, 'F2_WHO3', ...
@@ -129,7 +186,7 @@ if P2_data_loaded_successfully
                  comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
     makeBarChart(mean_F2_AND, [], std_F2_AND, [], pipelineNamesList_P2, 'F2_WHO3', ...
                  'Mean F2-WHO3 (AND Strategy)', 'Mean F2-Score', 'P2_F2_AND_Strategy', ...
-                 comparisonFiguresPath, dateStrForFilenames, struct('OR', colorStrategyAND)); 
+                 comparisonFiguresPath, dateStrForFilenames, struct('OR', colorStrategyAND)); % Pass AND color as 'OR' for single plot
     makeBarChart(mean_F2_OR, mean_F2_AND, std_F2_OR, std_F2_AND, pipelineNamesList_P2, 'F2_WHO3', ...
                  'Combined Mean F2-WHO3 (OR vs AND Strategy)', 'Mean F2-Score', 'P2_F2_CombinedStrategies', ...
                  comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
@@ -146,34 +203,120 @@ else
     fprintf('Skipping Phase 2 Bar Chart generation as P2_data_loaded_successfully is false.\n');
 end
 
-% --- Tiled Spider Plots ---
-if P2_data_loaded_successfully && ...
-   exist('mean_AUC_OR', 'var') && exist('mean_F2_OR', 'var') && ... 
-   ~isempty(mean_AUC_OR) && ~isempty(mean_F2_OR) 
+% --- Helper function for Tiled Spider Plots ---
+function makeTiledSpiderPlot(mean_metric_OR, std_metric_OR, mean_metric_AND, std_metric_AND, ...
+                             pipelineNames, metricStr, axesLimits, axesInterval, figNameSuffix, outputPath, datePrefix, strategyColors, shadeColors)
+    
+    if ~(exist('spider_plot_R2019b', 'file') || exist('spider_plot', 'file'))
+        fprintf('Spider plot function not found. Skipping %s spider plot.\n', metricStr);
+        return;
+    end
 
-    spiderPlotLineColors = struct('OR', colorStrategyOR, 'AND', colorStrategyAND);
-    spiderPlotShadeColors = struct('OR', colorStdDevShadeOR, 'AND', colorStdDevShadeAND);
+    figSpider = figure('Name', sprintf('Spider Plots - %s per Pipeline by Strategy', metricStr), ...
+                       'Position', [100, 100, 1000, 550]); % Wider for two plots
+    tl_spider = tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+    sgtitle(tl_spider, sprintf('%s Performance Comparison by Outlier Strategy', metricStr), 'FontSize', plotFontSize+2, 'FontWeight','Normal');
+
+    spiderAxesLabels = pipelineNames'; % Ensure row vector
+    
+    % Plot for OR Strategy
+    ax_OR = nexttile(tl_spider);
+    P_OR = mean_metric_OR'; % Data for spider plot (1 row per group)
+    P_OR(isnan(P_OR)) = axesLimits(1); % Replace NaN with min axis limit for plotting
+    
+    lower_bound_OR = mean_metric_OR' - std_metric_OR';
+    upper_bound_OR = mean_metric_OR' + std_metric_OR';
+    % Clip bounds to axis limits
+    lower_bound_OR = max(lower_bound_OR, axesLimits(1)); 
+    upper_bound_OR = min(upper_bound_OR, axesLimits(2));
+    shaded_limits_OR = {[lower_bound_OR; upper_bound_OR]}; % Cell array with one 2xN matrix
+
+    try
+        if exist('spider_plot_R2019b', 'file')
+            spider_plot_R2019b(P_OR, ...
+                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
+                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
+                'AxesFontColor', [0.2,0.2,0.2], 'AxesFontSize', plotFontSize-1, 'LabelFontSize', plotFontSize, ...
+                'FillOption', 'on', 'FillTransparency', 0.1, ...
+                'Color', strategyColors.OR, 'LineWidth', 2, ...
+                'Marker', 'o', 'MarkerSize', 70, ...
+                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_OR, ...
+                'AxesShadedColor', {shadeColors.OR}, 'AxesShadedTransparency', 0.2);
+        else % Fallback
+            spider_plot(P_OR, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
+                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one',...
+                'FillOption', 'on', 'FillTransparency', 0.1, 'Color', strategyColors.OR, 'LineWidth', 2);
+             warning('Using generic spider_plot.m for OR; std dev shading not directly supported in fallback.');
+        end
+        title(ax_OR, 'T2 OR Q Strategy', 'FontWeight', 'Normal');
+    catch ME_spider_OR
+         fprintf('ERROR creating OR strategy spider plot for %s: %s\n', metricStr, ME_spider_OR.message);
+    end
+
+    % Plot for AND Strategy
+    ax_AND = nexttile(tl_spider);
+    P_AND = mean_metric_AND';
+    P_AND(isnan(P_AND)) = axesLimits(1);
+    
+    lower_bound_AND = mean_metric_AND' - std_metric_AND';
+    upper_bound_AND = mean_metric_AND' + std_metric_AND';
+    lower_bound_AND = max(lower_bound_AND, axesLimits(1));
+    upper_bound_AND = min(upper_bound_AND, axesLimits(2));
+    shaded_limits_AND = {[lower_bound_AND; upper_bound_AND]};
+
+    try
+        if exist('spider_plot_R2019b', 'file')
+            spider_plot_R2019b(P_AND, ...
+                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
+                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
+                'AxesFontColor', [0.2,0.2,0.2], 'AxesFontSize', plotFontSize-1, 'LabelFontSize', plotFontSize, ...
+                'FillOption', 'on', 'FillTransparency', 0.1, ...
+                'Color', strategyColors.AND, 'LineWidth', 2, ...
+                'Marker', 's', 'MarkerSize', 70, ...
+                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_AND, ...
+                'AxesShadedColor', {shadeColors.AND}, 'AxesShadedTransparency', 0.2);
+        else % Fallback
+            spider_plot(P_AND, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
+                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
+                'FillOption', 'on', 'FillTransparency', 0.1, 'Color', strategyColors.AND, 'LineWidth', 2);
+            warning('Using generic spider_plot.m for AND; std dev shading not directly supported in fallback.');
+        end
+        title(ax_AND, 'T2 AND Q Strategy (Consensus)', 'FontWeight', 'Normal');
+    catch ME_spider_AND
+        fprintf('ERROR creating AND strategy spider plot for %s: %s\n', metricStr, ME_spider_AND.message);
+    end
+    
+    filenameBase_Spider = fullfile(outputPath, sprintf('%s_P2_SpiderPlot_%s_TiledStrategies', datePrefix, figNameSuffix));
+    exportgraphics(figSpider, [filenameBase_Spider, '.tiff'], 'Resolution', 300);
+    savefig(figSpider, [filenameBase_Spider, '.fig']);
+    fprintf('Tiled spider plot for %s saved to: %s.(tiff/fig)\n', metricStr, filenameBase_Spider);
+    if isgraphics(figSpider), close(figSpider); end
+end
+
+
+% --- Generate Tiled Spider Plots ---
+if P2_data_loaded_successfully && ...
+   exist('mean_AUC_OR', 'var') && exist('mean_F2_OR', 'var') % Check if main metric vectors exist
+
+    spiderPlotColors = struct('OR', colorStrategyOR, 'AND', colorStrategyAND);
+    spiderShadeColors = struct('OR', colorStdDevShadeOR, 'AND', colorStdDevShadeAND);
 
     % AUC Spider Plot (0.6 to 1.0)
     aucSpiderAxesLimits = repmat([0.6; 1.0], 1, numPipelines_P2);
+    % For axes interval, range is 1.0 - 0.6 = 0.4. If we want ticks at 0.6, 0.7, 0.8, 0.9, 1.0 (4 intervals)
     aucSpiderAxesInterval = 4; 
     makeTiledSpiderPlot(mean_AUC_OR, std_AUC_OR, mean_AUC_AND, std_AUC_AND, ...
                         pipelineNamesList_P2, 'Mean AUC', aucSpiderAxesLimits, aucSpiderAxesInterval, ...
-                        'AUC_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotLineColors, spiderPlotShadeColors, plotFontSize);
+                        'AUC_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotColors, spiderShadeColors);
 
     % F2-WHO3 Spider Plot (0.6 to 1.0)
     f2SpiderAxesLimits = repmat([0.6; 1.0], 1, numPipelines_P2);
-    f2SpiderAxesInterval = 4; 
+    f2SpiderAxesInterval = 4; % Similar interval logic as AUC
     makeTiledSpiderPlot(mean_F2_OR, std_F2_OR, mean_F2_AND, std_F2_AND, ...
                         pipelineNamesList_P2, 'Mean F2-WHO3', f2SpiderAxesLimits, f2SpiderAxesInterval, ...
-                        'F2_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotLineColors, spiderPlotShadeColors, plotFontSize);
+                        'F2_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotColors, spiderShadeColors);
 else
     fprintf('Data for Tiled Spider Plots not fully available. Skipping these plots.\n');
-    if ~(exist('P2_data_loaded_successfully', 'var') && P2_data_loaded_successfully)
-         fprintf('Reason: Phase 2 data was not successfully loaded or initialized.\n');
-    else
-         fprintf('Reason: One or more required metric arrays (mean_AUC_OR, mean_F2_OR etc.) are missing or empty.\n');
-    end
 end
 
 
@@ -182,7 +325,6 @@ end
 fprintf('\n--- 3. Loading Phase 3 Results ---\n');
 P3_data_loaded = false; 
 P3_probe_data_loaded = false; 
-finalModelPackage = []; 
 
 finalModelFiles = dir(fullfile(modelsPath_P3, '*_Phase3_FinalMRMRLDA_Model.mat'));
 if isempty(finalModelFiles)
@@ -279,9 +421,10 @@ end
 % ... (This section remains unchanged) ...
 fprintf('\n--- 5. Loading Phase 4 Results ---\n');
 P4_data_loaded = false; 
-featureTableFileToLoad = '';
+
 featureTableFile_dated = fullfile(resultsPath_P4, sprintf('%s_Phase4_FeatureImportanceTable_WithPvalues.csv', dateStrForFilenames));
 altFeatureTableFiles = dir(fullfile(resultsPath_P4, '*_Phase4_FeatureImportanceTable_WithPvalues.csv'));
+featureTableFileToLoad = '';
 if exist(featureTableFile_dated, 'file')
     featureTableFileToLoad = featureTableFile_dated;
 elseif ~isempty(altFeatureTableFiles)
@@ -305,11 +448,10 @@ end
 %% 6. Generate Phase 4 Visualizations
 % ... (This section remains unchanged) ...
 fprintf('\n--- 6. Generating Phase 4 Visualizations ---\n');
-if P4_data_loaded && P3_data_loaded && ~isempty(finalModelPackage)
+if P4_data_loaded && P3_data_loaded 
     figP4Coeff = figure('Name', 'Phase 4 - LDA Coefficient Spectrum', 'Position', [100, 100, 900, 600]);
     if ismember('BinnedWavenumber_cm_neg1', P4_feature_importance_table.Properties.VariableNames) && ...
-       ismember('LDACoefficient', P4_feature_importance_table.Properties.VariableNames) && ...
-       isfield(finalModelPackage, 'binningFactor') 
+       ismember('LDACoefficient', P4_feature_importance_table.Properties.VariableNames)
         
         plot_wavenumbers_p4 = P4_feature_importance_table.BinnedWavenumber_cm_neg1;
         plot_coeffs_p4 = P4_feature_importance_table.LDACoefficient;
@@ -322,14 +464,14 @@ if P4_data_loaded && P3_data_loaded && ~isempty(finalModelPackage)
         ylabel('LDA Coefficient Value'); 
         title({'LDA Coefficients for MRMR-Selected Features (WHO-1 vs WHO-3)'; 'Positive values indicate contribution towards WHO-3'},'FontWeight','Normal'); 
         grid on; ax_p4c = gca; ax_p4c.XDir = 'reverse'; 
-        if ~isempty(plot_wavenumbers_p4_sorted), xlim([min(plot_wavenumbers_p4_sorted)-5 max(plot_wavenumbers_p4_sorted)+5]); else xlim([900 1800]); end 
+        if ~isempty(plot_wavenumbers_p4_sorted), xlim([min(plot_wavenumbers_p4_sorted)-5 max(plot_wavenumbers_p4_sorted)+5]); else xlim(plotXLim); end
 
         ldaCoeffPlotP4Filename = fullfile(figuresPath_output, sprintf('%s_P4_LDACoeffSpectrum.tiff', dateStrForFilenames));
         exportgraphics(figP4Coeff, ldaCoeffPlotP4Filename, 'Resolution', 300);
         savefig(figP4Coeff, strrep(ldaCoeffPlotP4Filename, '.tiff','.fig'));
         fprintf('Phase 4 LDA Coefficient Spectrum saved to: %s\n', ldaCoeffPlotP4Filename);
     else
-        fprintf('Skipping LDA Coefficient plot: Required columns not in feature table or binningFactor missing from finalModelPackage.\n');
+        fprintf('Skipping LDA Coefficient plot: Required columns not in feature table.\n');
     end
     if isgraphics(figP4Coeff), close(figP4Coeff); end
     
@@ -337,9 +479,7 @@ if P4_data_loaded && P3_data_loaded && ~isempty(finalModelPackage)
 
 else
     if ~P4_data_loaded, fprintf('Skipping Phase 4 visualizations: P4_feature_importance_table not loaded.\n'); end
-    if ~P3_data_loaded || isempty(finalModelPackage)
-        fprintf('Skipping Phase 4 visualizations: finalModelPackage from Phase 3 not loaded or empty (needed for binning factor context).\n'); 
-    end
+    if ~P3_data_loaded, fprintf('Skipping Phase 4 visualizations: finalModelPackage from Phase 3 not loaded (needed for binning factor context).\n'); end
 end
 
 %% 7. ROC Curves for Phase 2 Pipelines (Outer CV Folds) - TEMPLATE
@@ -352,24 +492,20 @@ if P2_data_loaded_successfully
     
     positiveClassLabel_roc = 3; 
     
-    if isfield(overallComparisonResults_P2, 'outlierStrategies') 
+    % Assuming overallComparisonResults_P2.outlierStrategies contains {'OR', 'AND'}
+    if isfield(overallComparisonResults_P2, 'outlierStrategies')
         outlierStrategiesForROC = overallComparisonResults_P2.outlierStrategies;
     else
-        outlierStrategiesForROC = {'OR', 'AND'}; 
+        outlierStrategiesForROC = {'OR', 'AND'}; % Fallback if not defined
         fprintf('Warning: overallComparisonResults_P2.outlierStrategies not defined. Assuming default {''OR'', ''AND''}.\n');
     end
 
     for iStrat_roc = 1:length(outlierStrategiesForROC)
         currentStrategy_roc = outlierStrategiesForROC{iStrat_roc};
-        
-        if ~isfield(overallComparisonResults_P2, sprintf('Strategy_%s', currentStrategy_roc))
-            fprintf('Results for strategy "%s" not found in overallComparisonResults_P2. Skipping ROC for this strategy.\n', currentStrategy_roc);
-            continue;
-        end
         strategyResults_roc = overallComparisonResults_P2.(sprintf('Strategy_%s', currentStrategy_roc));
 
         figROC_P2_strat = figure('Name', sprintf('Phase 2 ROC Curves - %s Strategy', currentStrategy_roc), 'Position', [100, 100, 700, 900]);
-        tl_roc = tiledlayout(numPipelines_P2, 1, 'TileSpacing', 'loose', 'Padding', 'compact'); % Changed TileSpacing
+        tl_roc = tiledlayout(numPipelines_P2, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
         sgtitle(tl_roc, sprintf('Phase 2: ROC Curves for Pipelines (Outer CV Folds) - %s Strategy', currentStrategy_roc), 'FontSize', plotFontSize+2, 'FontWeight','Normal');
 
         for iPipe_roc = 1:numPipelines_P2
@@ -384,6 +520,12 @@ if P2_data_loaded_successfully
             plot(ax_roc, [0 1], [0 1], 'k:', 'HandleVisibility', 'off'); 
             
             all_fold_aucs_roc = [];
+
+            % HYPOTHETICAL DATA STRUCTURE:
+            % Modify run_phase2_model_selection_comparative.m so that
+            % strategyResults_roc.allPipelinesResults{iPipe_roc} contains fields like:
+            % .OuterFold_Y_True_Cell {numOuterFolds x 1 cell} where each cell contains a vector of true labels
+            % .OuterFold_Y_Scores_PositiveClass_Cell {numOuterFolds x 1 cell} for scores
             
             if isfield(strategyResults_roc.allPipelinesResults{iPipe_roc}, 'OuterFold_Y_True_Cell') && ...
                isfield(strategyResults_roc.allPipelinesResults{iPipe_roc}, 'OuterFold_Y_Scores_PositiveClass_Cell') && ...
@@ -396,187 +538,4 @@ if P2_data_loaded_successfully
                     
                     if ~isempty(y_true_fold_roc) && ~isempty(y_scores_fold_roc) && length(unique(y_true_fold_roc)) > 1
                         try
-                            [Xroc_val, Yroc_val, ~, AUCroc] = perfcurve(y_true_fold_roc, y_scores_fold_roc, positiveClassLabel_roc); % Renamed Xroc, Yroc to avoid conflict
-                            plot(ax_roc, Xroc_val, Yroc_val, 'LineWidth', 1, 'DisplayName', sprintf('Fold %d (AUC=%.3f)', kFold_roc, AUCroc));
-                            all_fold_aucs_roc(end+1) = AUCroc;
-                        catch ME_perfcurve
-                            fprintf('  Pipeline %s, Fold %d (%s): Could not compute perfcurve - %s\n', pipelineName_roc, kFold_roc, currentStrategy_roc, ME_perfcurve.message);
-                        end
-                    else
-                        fprintf('  Pipeline %s, Fold %d (%s): Skipping ROC (not enough data/classes in y_true_fold).\n', pipelineName_roc, kFold_roc, currentStrategy_roc);
-                    end
-                end
-            else
-                 text(0.5, 0.5, 'Raw y_true/y_scores data not available for ROC curves.', 'Parent', ax_roc, 'HorizontalAlignment', 'center');
-                 fprintf('  Pipeline %s (%s): Raw y_true/y_scores data for outer folds not found in results structure.\n', pipelineName_roc, currentStrategy_roc);
-            end
-            
-            if ~isempty(all_fold_aucs_roc)
-                meanAUC_pipe_roc = mean(all_fold_aucs_roc, 'omitnan');
-                title(ax_roc, sprintf('%s (Mean AUC: %.3f)', pipelineName_roc, meanAUC_pipe_roc), 'FontWeight', 'Normal', 'FontSize', plotFontSize);
-            end
-            legend(ax_roc, 'show', 'Location', 'southeast', 'FontSize', plotFontSize-2);
-            hold(ax_roc, 'off');
-        end 
-        
-        rocFilenameBase = fullfile(comparisonFiguresPath, sprintf('%s_P2_ROC_OuterFolds_Strat_%s', dateStrForFilenames, currentStrategy_roc));
-        exportgraphics(figROC_P2_strat, [rocFilenameBase, '.tiff'], 'Resolution', 300);
-        savefig(figROC_P2_strat, [rocFilenameBase, '.fig']);
-        fprintf('Phase 2 ROC curves for %s strategy saved to: %s.(tiff/fig)\n', currentStrategy_roc, rocFilenameBase);
-        if isgraphics(figROC_P2_strat), close(figROC_P2_strat); end
-
-    end 
-else
-    fprintf('Skipping Phase 2 ROC curve generation as P2_data_loaded_successfully is false.\n');
-end
-
-
-fprintf('\n--- All Requested and Suggested Visualizations Attempted ---\n');
-
-
-% ===== HELPER FUNCTION DEFINITIONS (MUST BE AT THE END OF THE SCRIPT FILE) =====
-
-function makeBarChart(dataOR, dataAND, stdOR, stdAND, pipelineNames, metricName, titleStr, yLabelStr, figNameSuffix, outputPath, datePrefix, strategyPlotColors)
-    fig = figure('Name', titleStr, 'Position', [100, 100, 1000, 600]);
-    if isempty(dataAND) 
-        bar_data = dataOR;
-        b = bar(bar_data);
-        hold on;
-        errorbar(1:length(dataOR), dataOR, stdOR, 'k.', 'HandleVisibility','off');
-        b(1).FaceColor = strategyPlotColors.OR;
-        legendTxt = {'T2 OR Q Strategy'};
-    else 
-        bar_data = [dataOR, dataAND];
-        b = bar(bar_data);
-        hold on;
-        numGroups = size(bar_data, 1);
-        numBarsPerGroup = size(bar_data, 2);
-        groupWidth = min(0.8, numBarsPerGroup/(numBarsPerGroup + 1.5));
-        for iBar = 1:numBarsPerGroup
-            x_centers = (1:numGroups) - groupWidth/2 + (2*iBar-1) * groupWidth / (2*numBarsPerGroup);
-            if iBar == 1, errorbar(x_centers, dataOR, stdOR, 'k.', 'HandleVisibility','off');
-            else, errorbar(x_centers, dataAND, stdAND, 'k.', 'HandleVisibility','off'); end
-        end
-        b(1).FaceColor = strategyPlotColors.OR; 
-        b(2).FaceColor = strategyPlotColors.AND; 
-        legendTxt = {'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'};
-    end
-    hold off;
-    xticks(1:length(pipelineNames)); xticklabels(pipelineNames); xtickangle(45);
-    ylabel(yLabelStr); title({titleStr; '(Error bars: +/-1 Std.Dev. outer CV scores)'}, 'FontWeight', 'normal');
-    legend(legendTxt, 'Location', 'NorthEastOutside'); grid on;
-    all_means = bar_data(~isnan(bar_data));
-    all_stds_or = stdOR(~isnan(stdOR) & ~isnan(dataOR));
-    all_stds_and = []; if ~isempty(dataAND), all_stds_and = stdAND(~isnan(stdAND) & ~isnan(dataAND)); end
-    max_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), max_vals_std = [max_vals_std; dataOR(~isnan(dataOR)) + all_stds_or]; end
-    if ~isempty(dataAND) && ~isempty(all_stds_and), max_vals_std = [max_vals_std; dataAND(~isnan(dataAND)) + all_stds_and]; end
-    if isempty(max_vals_std), max_vals_std = all_means; end; if isempty(max_vals_std), max_vals_std = 0.1; end
-    min_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), min_vals_std = [min_vals_std; dataOR(~isnan(dataOR)) - all_stds_or]; end
-    if ~isempty(dataAND) && ~isempty(all_stds_and), min_vals_std = [min_vals_std; dataAND(~isnan(dataAND)) - all_stds_and]; end
-    if isempty(min_vals_std), min_vals_std = all_means; end; if isempty(min_vals_std), min_vals_std = 0; end
-    upper_y = max(max_vals_std(:),[],'omitnan'); lower_y = min(min_vals_std(:),[],'omitnan');
-    if isempty(upper_y)||isnan(upper_y),upper_y=0.1;end; if isempty(lower_y)||isnan(lower_y),lower_y=0;end
-    pad = (upper_y-lower_y)*0.1; if pad==0||isnan(pad),pad=0.05;end; final_y = [max(0,lower_y-pad),upper_y+pad];
-    if final_y(1)>=final_y(2),final_y=[0,max(0.1,final_y(2)+0.1)];end; ylim(final_y);
-    
-    filenameBase = fullfile(outputPath, sprintf('%s_BarChart_%s', datePrefix, figNameSuffix));
-    exportgraphics(fig, [filenameBase, '.tiff'], 'Resolution', 300);
-    savefig(fig, [filenameBase, '.fig']);
-    fprintf('Bar chart "%s" saved.\n', titleStr);
-    close(fig);
-end
-
-function makeTiledSpiderPlot(mean_metric_OR, std_metric_OR, mean_metric_AND, std_metric_AND, ...
-                             pipelineNames, metricStr, axesLimits, axesInterval, figNameSuffix, ...
-                             outputPath, datePrefix, strategyColors, shadeColors, plotFontSize_arg)
-
-    if ~(exist('spider_plot_R2019b', 'file') || exist('spider_plot', 'file'))
-        fprintf('Spider plot function not found. Skipping %s spider plot.\n', metricStr);
-        return;
-    end
-
-    figSpider = figure('Name', sprintf('Spider Plots - %s per Pipeline by Strategy', metricStr), ...
-                       'Position', [100, 100, 1100, 550]); 
-    tl_spider = tiledlayout(1, 2, 'TileSpacing', 'loose', 'Padding', 'compact'); 
-    sgtitle(tl_spider, sprintf('%s Performance Comparison by Outlier Strategy', metricStr), 'FontSize', plotFontSize_arg+2, 'FontWeight','Normal'); 
-
-    spiderAxesLabels = pipelineNames'; 
-    axesLabelsOffset_val = 0.2; 
-
-    % Plot for OR Strategy
-    ax_OR = nexttile(tl_spider);
-    P_OR = mean_metric_OR'; 
-    P_OR(isnan(P_OR)) = axesLimits(1); 
-    
-    lower_bound_OR = mean_metric_OR' - std_metric_OR';
-    upper_bound_OR = mean_metric_OR' + std_metric_OR';
-    lower_bound_OR = max(lower_bound_OR, axesLimits(1)); 
-    upper_bound_OR = min(upper_bound_OR, axesLimits(2));
-    shaded_limits_OR = {[lower_bound_OR; upper_bound_OR]}; 
-
-    try
-        if exist('spider_plot_R2019b', 'file')
-            spider_plot_R2019b(P_OR, ...
-                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesFontColor', [0.2,0.2,0.2], 'AxesFontSize', plotFontSize_arg-1, ...
-                'LabelFontSize', plotFontSize_arg, 'AxesLabelsOffset', axesLabelsOffset_val, ...
-                'FillOption', 'off', ... % MAIN DATA FILL OFF
-                'Color', strategyColors.OR, 'LineWidth', 2, ...
-                'Marker', 'o', 'MarkerSize', 70, ...
-                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_OR, ... 
-                'AxesShadedColor', {shadeColors.OR}, 'AxesShadedTransparency', 0.2);
-        else 
-            spider_plot(P_OR, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one',...
-                'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'FillOption', 'off', 'Color', strategyColors.OR, 'LineWidth', 2); % MAIN DATA FILL OFF
-             warning('Using generic spider_plot.m for OR; std dev shading not directly supported in fallback.');
-        end
-        title(ax_OR, 'T2 OR Q Strategy', 'FontWeight', 'Normal', 'FontSize', plotFontSize_arg); 
-    catch ME_spider_OR
-         fprintf('ERROR creating OR strategy spider plot for %s: %s\n', metricStr, ME_spider_OR.message);
-    end
-
-    % Plot for AND Strategy
-    ax_AND = nexttile(tl_spider);
-    P_AND = mean_metric_AND';
-    P_AND(isnan(P_AND)) = axesLimits(1);
-    
-    lower_bound_AND = mean_metric_AND' - std_metric_AND';
-    upper_bound_AND = mean_metric_AND' + std_metric_AND';
-    lower_bound_AND = max(lower_bound_AND, axesLimits(1));
-    upper_bound_AND = min(upper_bound_AND, axesLimits(2));
-    shaded_limits_AND = {[lower_bound_AND; upper_bound_AND]};
-
-    try
-        if exist('spider_plot_R2019b', 'file')
-            spider_plot_R2019b(P_AND, ...
-                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesFontColor', [0.2,0.2,0.2], 'AxesFontSize', plotFontSize_arg-1, ...
-                'LabelFontSize', plotFontSize_arg, 'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'FillOption', 'off', ... % MAIN DATA FILL OFF
-                'Color', strategyColors.AND, 'LineWidth', 2, ...
-                'Marker', 's', 'MarkerSize', 70, ...
-                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_AND, ... 
-                'AxesShadedColor', {shadeColors.AND}, 'AxesShadedTransparency', 0.2);
-        else 
-            spider_plot(P_AND, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'FillOption', 'off', 'Color', strategyColors.AND, 'LineWidth', 2); % MAIN DATA FILL OFF
-            warning('Using generic spider_plot.m for AND; std dev shading not directly supported in fallback.');
-        end
-        title(ax_AND, 'T2 AND Q Strategy (Consensus)', 'FontWeight', 'Normal','FontSize', plotFontSize_arg); 
-    catch ME_spider_AND
-        fprintf('ERROR creating AND strategy spider plot for %s: %s\n', metricStr, ME_spider_AND.message);
-    end
-    
-    filenameBase_Spider = fullfile(outputPath, sprintf('%s_P2_SpiderPlot_%s_TiledStrategies', datePrefix, figNameSuffix));
-    exportgraphics(figSpider, [filenameBase_Spider, '.tiff'], 'Resolution', 300);
-    savefig(figSpider, [filenameBase_Spider, '.fig']);
-    fprintf('Tiled spider plot for %s saved to: %s.(tiff/fig)\n', metricStr, filenameBase_Spider);
-    if isgraphics(figSpider), close(figSpider); end
-end
-% --- End of Helper Function Definitions ---
+                            [Xroc, Yroc, ~, AUCroc] = perfcurve(y_true_fold_roc, y_
