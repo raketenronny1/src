@@ -676,3 +676,144 @@ probeViolinFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevel
 savefig(gcf, [probeViolinFigFilenameBase, '.fig']);
 exportgraphics(gcf, [probeViolinFigFilenameBase, '.tiff'], 'Resolution', 300);
 fprintf('Probe-level violin probability plot saved to: %s.(fig/tiff)\n', probeViolinFigFilenameBase);
+
+
+%% 6. Additional Visualizations (Spectrum-Level ROC and DET Curves)
+% =========================================================================
+fprintf('\n--- Generating Spectrum-Level ROC and DET Curves ---\n');
+
+if exist('y_test_full_numeric', 'var') && exist('scores_for_positive_class_test', 'var') && ...
+   ~isempty(y_test_full_numeric) && ~isempty(scores_for_positive_class_test) && exist('final_LDA_model','var')
+
+    positiveClassLabel_for_curves = 3; % Assuming WHO-3 is numerically 3. Adjust if different.
+    % Ensure this matches the positiveClassLabel_test used for metrics calculation earlier.
+
+    % Define class names if you want them in titles, though not directly used by plotRocAndDetCurves
+    % classNames_for_plot = final_LDA_model.ClassNames; % Or define manually: {'WHO I', 'WHO III'}
+    % If classNames_for_plot is categorical, convert positiveClassLabel_for_curves if needed for titles.
+    
+    titleRocStr = sprintf('ROC (Test Set, Spectrum-Level, Bin:%d, MRMR:%d)', ...
+                          finalModelPackage.binningFactor, finalModelPackage.numMRMRFeaturesSelected);
+    titleDetStr = sprintf('DET (Test Set, Spectrum-Level, Bin:%d, MRMR:%d)', ...
+                          finalModelPackage.binningFactor, finalModelPackage.numMRMRFeaturesSelected);
+
+    % Call the plotting function
+    % The last argument 'true' enables the normal deviate scale for the DET curve.
+    fh_roc_det_spectrum = plotRocAndDetCurves(y_test_full_numeric, ...
+                                              scores_for_positive_class_test, ...
+                                              positiveClassLabel_for_curves, ...
+                                              titleRocStr, ...
+                                              titleDetStr, ...
+                                              true); % Use normal deviate scale for DET
+
+    if isgraphics(fh_roc_det_spectrum) % Check if figure was created
+        rocDetFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ROC_DET_SpectrumLevel', dateStr));
+        try
+            exportgraphics(fh_roc_det_spectrum, [rocDetFigFilenameBase, '.tiff'], 'Resolution', 300);
+            savefig(fh_roc_det_spectrum, [rocDetFigFilenameBase, '.fig']);
+            fprintf('Spectrum-Level ROC and DET curves saved to: %s.(fig/tiff)\n', rocDetFigFilenameBase);
+        catch ME_save_roc
+            fprintf('Warning: Could not save ROC/DET plot: %s\n', ME_save_roc.message);
+        end
+        % close(fh_roc_det_spectrum); % Optional: close after saving
+    else
+        fprintf('Spectrum-Level ROC and DET curves were not generated.\n');
+    end
+else
+    fprintf('Skipping Spectrum-Level ROC/DET curves: Required data (true labels, scores, or model) not available.\n');
+    if ~exist('y_test_full_numeric', 'var') || isempty(y_test_full_numeric)
+        disp('Reason: y_test_full_numeric not found or empty.');
+    end
+    if ~exist('scores_for_positive_class_test', 'var') || isempty(scores_for_positive_class_test)
+        disp('Reason: scores_for_positive_class_test not found or empty.');
+    end
+     if ~exist('final_LDA_model', 'var')
+        disp('Reason: final_LDA_model not found (needed for context in titles via finalModelPackage).');
+    end
+end
+
+
+fprintf('\nPHASE 3 Processing Complete (including additional visualizations): %s\n', string(datetime('now')));
+
+
+% =========================================================================
+% HELPER FUNCTION DEFINITIONS
+% =========================================================================
+% Make sure 'calculate_performance_metrics.m' and 'bin_spectra.m' are in your 'helper_functions' path.
+% Add the plotRocAndDetCurves function definition here if it's not already in 'helper_functions'
+% or at the end of your main script.
+
+% --- START: Definition of plotRocAndDetCurves (if not in helper_functions) ---
+% (Paste the function definition provided in the previous response here)
+function fh_roc_det = plotRocAndDetCurves(trueLabels, scores, positiveClassIdentifier, titleRocStr, titleDetStr, useNormalDeviateScaleDet)
+% plotRocAndDetCurves - Plots ROC and DET curves side-by-side.
+% Inputs:
+%   trueLabels - Vector of true binary labels (e.g., 0/1, logical, or categorical with two classes).
+%                If categorical, positiveClassIdentifier must match one of the categories.
+%                If numeric/logical, positiveClassIdentifier must match the value of the positive class.
+%   scores - Vector of scores or probabilities for the positive class.
+%   positiveClassIdentifier - The label of the positive class (e.g., 1, true, 'WHO III').
+%   titleRocStr - String for the ROC plot title.
+%   titleDetStr - String for the DET plot title.
+%   useNormalDeviateScaleDet - Logical, true to use normal deviate scale for DET axes.
+
+    if nargin < 4 || isempty(titleRocStr)
+        titleRocStr = 'ROC Curve';
+    end
+    if nargin < 5 || isempty(titleDetStr)
+        titleDetStr = 'DET Curve';
+    end
+    if nargin < 6 || isempty(useNormalDeviateScaleDet)
+        useNormalDeviateScaleDet = false;
+    end
+
+    fh_roc_det = figure('Name', [titleRocStr, ' & ', titleDetStr], 'NumberTitle', 'off', 'Visible', 'on'); % Ensure visible
+    try
+        % perfcurve can handle numeric, logical, or categorical trueLabels.
+        % If trueLabels are categorical, positiveClassIdentifier should be one of the category names (string or char).
+        % If trueLabels are numeric/logical, positiveClassIdentifier should be the numeric/logical value of the positive class.
+        [Xroc, Yroc, ~, AUCroc] = perfcurve(trueLabels, scores, positiveClassIdentifier);
+        [Xdet_fpr, Ydet_fnr] = perfcurve(trueLabels, scores, positiveClassIdentifier, 'XCrit', 'fpr', 'YCrit', 'fnr');
+
+        tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+        ax_roc = nexttile;
+        plot(ax_roc, Xroc, Yroc, 'LineWidth', 1.5);
+        hold(ax_roc, 'on'); plot(ax_roc, [0 1], [0 1], 'k--'); hold(ax_roc, 'off');
+        xlabel(ax_roc, 'False Positive Rate (FPR)'); ylabel(ax_roc, 'True Positive Rate (TPR)');
+        title(ax_roc, sprintf('%s (AUC = %.3f)', titleRocStr, AUCroc));
+        grid(ax_roc, 'on'); axis(ax_roc, [0 1 0 1]);
+
+        ax_det = nexttile;
+        if useNormalDeviateScaleDet
+            epsilon = 1e-7; 
+            Xdet_fpr_safe = max(epsilon, min(1-epsilon, Xdet_fpr));
+            Ydet_fnr_safe = max(epsilon, min(1-epsilon, Ydet_fnr));
+            Xdet_fpr_norm = norminv(Xdet_fpr_safe);
+            Ydet_fnr_norm = norminv(Ydet_fnr_safe);
+            
+            plot(ax_det, Xdet_fpr_norm, Ydet_fnr_norm, 'LineWidth', 1.5);
+            xlabel(ax_det, 'FPR (Normal Deviate Scale)'); ylabel(ax_det, 'FNR (Normal Deviate Scale)');
+            title(ax_det, [titleDetStr, ' (Normal Deviate)']);
+            
+            prob_ticks = [0.001, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98, 0.99, 0.999];
+            norm_ticks = norminv(prob_ticks);
+            x_ticks_to_use = norm_ticks(norm_ticks >= min(Xdet_fpr_norm(isfinite(Xdet_fpr_norm))) & norm_ticks <= max(Xdet_fpr_norm(isfinite(Xdet_fpr_norm))));
+            y_ticks_to_use = norm_ticks(norm_ticks >= min(Ydet_fnr_norm(isfinite(Ydet_fnr_norm))) & norm_ticks <= max(Ydet_fnr_norm(isfinite(Ydet_fnr_norm))));
+
+            if ~isempty(x_ticks_to_use), set(ax_det, 'XTick', x_ticks_to_use, 'XTickLabel', sprintfc('%.3g', prob_ticks(ismembertol(norm_ticks, x_ticks_to_use)))); end
+            if ~isempty(y_ticks_to_use), set(ax_det, 'YTick', y_ticks_to_use, 'YTickLabel', sprintfc('%.3g', prob_ticks(ismembertol(norm_ticks, y_ticks_to_use)))); end
+        else
+            plot(ax_det, Xdet_fpr, Ydet_fnr, 'LineWidth', 1.5);
+            xlabel(ax_det, 'False Positive Rate (FPR)'); ylabel(ax_det, 'False Negative Rate (FNR)');
+            title(ax_det, titleDetStr); axis(ax_det, [0 1 0 1]);
+        end
+        grid(ax_det, 'on');
+        fprintf('ROC and DET curves ''%s'' & ''%s'' plotted.\n', titleRocStr, titleDetStr);
+    catch ME
+        fprintf('Error plotting ROC/DET curves: %s\n', ME.message);
+        disp(ME.getReport); % Display more detailed error information
+        if ishandle(fh_roc_det); close(fh_roc_det); fh_roc_det = []; end
+    end
+end
+% --- END: Definition of plotRocAndDetCurves ---
