@@ -263,66 +263,141 @@ function generate_exploratory_outlier_visualizations(input_X_spectra, ...
     end
     % ... Apply similar try-catch and graphics handle checks for PLOT 8 ...
 
+  % Inside generate_exploratory_outlier_visualizations.m
+% ... (function definition, local variable mapping, code for Plots 1-7) ...
+
     % --- PLOT 8: Comprehensive Patient-wise Spectra Overview (11x4 Grid, Consensus Outliers) ---
-    % This uses is_T2_and_Q (local variable mapped from input_is_T2_and_Q)
+    % This uses is_T2_and_Q (local variable mapped from input_is_T2_and_Q_all)
     fprintf('\nVisualization Function: Generating Plot 8: Comprehensive Patient-wise Spectra Overview (Consensus Outliers)...\n');
-    unique_patient_ids_plot8 = unique(Patient_ID, 'stable');
+    
+    unique_patient_ids_plot8 = unique(Patient_ID, 'stable'); % Patient_ID is local
     num_total_patients_in_train_p8 = length(unique_patient_ids_plot8);
+
     if num_total_patients_in_train_p8 > 0
-        nrows_layout_p8 = 11; ncols_layout_p8 = 4;
-        fig8_handle = figure('Name', 'Alle Trainingsproben: Spektren mit Konsensus-Ausreißern');
-        fig_width_p8 = min(1800, ncols_layout_p8 * 300 + 100); fig_height_p8 = min(1600, nrows_layout_p8 * 150 + 150);
-        fig8_handle.Position = [10, 10, fig_width_p8, fig_height_p8];
-        tl_p8 = tiledlayout(nrows_layout_p8, ncols_layout_p8, 'TileSpacing', 'compact', 'Padding', 'compact');
-        title_str_p8 = sprintf('Alle Trainingsproben: Spektren mit Konsensus-Ausreißern (Rot Markiert) - %s', datePrefix);
-        try, title(tl_p8, title_str_p8, 'FontSize', plotFontSize+4, 'FontWeight', 'bold', 'Interpreter','none');
-        catch, title(tl_p8, 'All Training Probes: Spectra with Consensus Outliers (Red Marked)', 'FontSize', plotFontSize+4, 'FontWeight', 'bold'); end
-        color_consensus_outlier_p8 = colorBothOutlierFlag; % from P_vis
-        alpha_non_outlier_p8 = 0.3; alpha_outlier_p8 = 0.65; 
-        linewidth_non_outlier_p8 = 0.5; linewidth_outlier_p8 = 0.8;
-        h_legend_items_p8 = gobjects(3,1); legend_item_plotted_p8 = [false, false, false];
-        for i_plot_pat = 1:num_total_patients_in_train_p8
-            if i_plot_pat > (nrows_layout_p8 * ncols_layout_p8), fprintf('Plot 8 Warning: Displaying first %d patients.\n', nrows_layout_p8*ncols_layout_p8); break; end
-            current_pid_val = unique_patient_ids_plot8{i_plot_pat};
-            ax_p8 = nexttile(tl_p8); hold(ax_p8, 'on'); box(ax_p8, 'on');
-            patient_global_indices = find(strcmp(Patient_ID, current_pid_val));
-            patient_all_spectra_this_probe = X(patient_global_indices, :);
-            patient_consensus_outlier_flags = is_T2_and_Q(patient_global_indices); % Use local is_T2_and_Q
-            patient_who_grade_val = y_cat(patient_global_indices(1));
-            num_consensus_outliers_this_probe = sum(patient_consensus_outlier_flags);
-            patient_non_outlier_spectra = patient_all_spectra_this_probe(~patient_consensus_outlier_flags, :);
-            patient_consensus_outlier_spectra = patient_all_spectra_this_probe(patient_consensus_outlier_flags, :);
-            color_normal_spectra_p8 = ([0.6 0.6 0.6]); legend_idx_normal_p8 = 0;
-            if patient_who_grade_val == 'WHO-1', color_normal_spectra_p8 = colorWHO1; legend_idx_normal_p8 = 1;
-            elseif patient_who_grade_val == 'WHO-3', color_normal_spectra_p8 = colorWHO3; legend_idx_normal_p8 = 2; end
-            if ~isempty(patient_non_outlier_spectra)
-                plot(ax_p8, wavenumbers_roi, patient_non_outlier_spectra', 'Color', [color_normal_spectra_p8, alpha_non_outlier_p8], 'LineWidth', linewidth_non_outlier_p8, 'HandleVisibility','off');
-                if legend_idx_normal_p8 > 0 && ~legend_item_plotted_p8(legend_idx_normal_p8), h_legend_items_p8(legend_idx_normal_p8) = plot(ax_p8, NaN, NaN, 'Color', color_normal_spectra_p8, 'LineWidth', 1.5); legend_item_plotted_p8(legend_idx_normal_p8) = true; end
+        fprintf('Plot 8: Preparing to plot all %d patient/probes from the training set.\n', num_total_patients_in_train_p8);
+        
+        nrows_layout_p8 = 11; 
+        ncols_layout_p8 = 4;
+        
+        fig8_handle = figure('Name', 'Alle Trainingsproben: Spektren mit Konsensus-Ausreißern', 'Visible', 'off'); % Create invisible
+        if ~isgraphics(fig8_handle, 'figure')
+            warning('Plot 8: Failed to create figure handle. Skipping plot.');
+        else
+            fig_width_p8 = min(1800, ncols_layout_p8 * 300 + 100); 
+            fig_height_p8 = min(1600, nrows_layout_p8 * 150 + 150); 
+            fig8_handle.Position = [10, 10, fig_width_p8, fig_height_p8];
+            
+            try
+                tl_p8 = tiledlayout(fig8_handle, nrows_layout_p8, ncols_layout_p8, 'TileSpacing', 'compact', 'Padding', 'compact');
+                title_str_p8 = sprintf('Alle Trainingsproben: Spektren mit Konsensus-Ausreißern (Rot Markiert) - %s', datePrefix); % local datePrefix
+                title(tl_p8, title_str_p8, 'FontSize', plotFontSize+4, 'FontWeight', 'bold', 'Interpreter','none');
+
+                % Use local plotting parameters
+                color_consensus_outlier_p8 = colorBothOutlierFlag; 
+                alpha_non_outlier_p8 = 0.3;
+                alpha_outlier_p8 = 0.65; 
+                linewidth_non_outlier_p8 = 0.5;
+                linewidth_outlier_p8 = 0.8;
+                
+                h_legend_items_p8 = gobjects(3,1);
+                legend_item_plotted_p8 = [false, false, false]; % [WHO1-Normal, WHO3-Normal, Consensus Outlier]
+
+                for i_plot_pat = 1:num_total_patients_in_train_p8
+                    if i_plot_pat > (nrows_layout_p8 * ncols_layout_p8)
+                        fprintf('Plot 8 Warning: More patients (%d) than available tiles (%d). Plotting first %d.\n', ...
+                            num_total_patients_in_train_p8, nrows_layout_p8 * ncols_layout_p8, nrows_layout_p8 * ncols_layout_p8);
+                        break;
+                    end
+                    
+                    current_pid_val = unique_patient_ids_plot8{i_plot_pat};
+                    ax_p8 = nexttile(tl_p8); % Explicitly pass parent tiledlayout handle
+                    hold(ax_p8, 'on'); box(ax_p8, 'on');
+
+                    patient_global_indices = find(strcmp(Patient_ID, current_pid_val));
+                    patient_all_spectra_this_probe = X(patient_global_indices, :); % local X
+                    patient_consensus_outlier_flags = is_T2_and_Q(patient_global_indices); % local is_T2_and_Q
+                    
+                    patient_who_grade_val = y_cat(patient_global_indices(1)); % local y_cat
+                    num_consensus_outliers_this_probe = sum(patient_consensus_outlier_flags);
+                    
+                    patient_non_outlier_spectra = patient_all_spectra_this_probe(~patient_consensus_outlier_flags, :);
+                    patient_consensus_outlier_spectra = patient_all_spectra_this_probe(patient_consensus_outlier_flags, :);
+                    
+                    color_normal_spectra_p8_local = ([0.6 0.6 0.6]); 
+                    legend_idx_normal_p8 = 0;
+                    if patient_who_grade_val == 'WHO-1', color_normal_spectra_p8_local = colorWHO1; legend_idx_normal_p8 = 1;
+                    elseif patient_who_grade_val == 'WHO-3', color_normal_spectra_p8_local = colorWHO3; legend_idx_normal_p8 = 2; end
+                    
+                    if ~isempty(patient_non_outlier_spectra)
+                        plot(ax_p8, wavenumbers_roi, patient_non_outlier_spectra', 'Color', [color_normal_spectra_p8_local, alpha_non_outlier_p8], 'LineWidth', linewidth_non_outlier_p8, 'HandleVisibility','off');
+                        if legend_idx_normal_p8 > 0 && ~legend_item_plotted_p8(legend_idx_normal_p8)
+                            h_legend_items_p8(legend_idx_normal_p8) = plot(ax_p8, NaN, NaN, 'Color', color_normal_spectra_p8_local, 'LineWidth', 1.5);
+                            legend_item_plotted_p8(legend_idx_normal_p8) = true;
+                        end
+                    end
+                    
+                    if ~isempty(patient_consensus_outlier_spectra)
+                        plot(ax_p8, wavenumbers_roi, patient_consensus_outlier_spectra', 'Color', [color_consensus_outlier_p8, alpha_outlier_p8], 'LineWidth', linewidth_outlier_p8, 'HandleVisibility','off');
+                        if ~legend_item_plotted_p8(3)
+                             h_legend_items_p8(3) = plot(ax_p8, NaN, NaN, 'Color', color_consensus_outlier_p8, 'LineWidth', 1.5);
+                             legend_item_plotted_p8(3) = true;
+                        end
+                    end
+                    
+                    hold(ax_p8, 'off');
+                    xlim(ax_p8, plotXLim); ylim(ax_p8, 'auto'); 
+                    set(ax_p8, 'XTickMode', 'auto', 'YTickMode', 'auto', 'FontSize', plotFontSize - 4);
+                    ax_p8.XDir = 'reverse'; grid(ax_p8, 'off');
+                    
+                    title_txt_p8 = sprintf('%s (%s, %d Kons.-Ausr.)', current_pid_val, char(patient_who_grade_val), num_consensus_outliers_this_probe);
+                    title(ax_p8, title_txt_p8, 'FontSize', plotFontSize - 3, 'FontWeight', 'normal', 'Interpreter', 'none');
+                    
+                    current_tile_info_p8 = get(ax_p8,'Layout');
+                    current_col_p8 = mod(current_tile_info_p8.Tile-1, ncols_layout_p8) + 1;
+                    current_row_p8 = ceil(current_tile_info_p8.Tile / ncols_layout_p8);
+                    if current_col_p8 == 1, ylabel(ax_p8, 'Abs.', 'FontSize', plotFontSize-3); else set(ax_p8, 'YTickLabel',[]); end
+                    if current_row_p8 == nrows_layout_p8, xlabel(ax_p8, plotXLabel, 'FontSize', plotFontSize-3); else set(ax_p8, 'XTickLabel',[]); end % Use local plotXLabel
+                end % End of patient plotting loop
+                
+                for i_empty_tile = (num_total_patients_in_train_p8 + 1):(nrows_layout_p8 * ncols_layout_p8)
+                    ax_empty = nexttile(tl_p8, i_empty_tile); % Pass parent tl_p8
+                    set(ax_empty, 'Visible', 'off'); 
+                end
+
+                legend_texts_final_p8 = {}; valid_handles_p8 = [];
+                if legend_item_plotted_p8(1), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(1)]; legend_texts_final_p8{end+1} = 'Inlier WHO-1'; end
+                if legend_item_plotted_p8(2), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(2)]; legend_texts_final_p8{end+1} = 'Inlier WHO-3'; end
+                if legend_item_plotted_p8(3), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(3)]; legend_texts_final_p8{end+1} = 'Konsensus Ausreißer (T2&Q)'; end
+                if ~isempty(valid_handles_p8)
+                    lgd_p8 = legend(ax_p8, valid_handles_p8, legend_texts_final_p8, 'FontSize', plotFontSize-1, 'Orientation', 'horizontal'); % Use last ax_p8
+                    lgd_p8.Layout.Tile = 'South'; 
+                end
+
+                fig8_handle.Visible = 'on';
+                drawnow; % Ensure figure is rendered before saving
+
+                figName_p8_tiff = fullfile(figuresDir, sprintf('%s_VisFunc_Plot8_AllPatientSpectra_ConsensusOutliers.tiff', datePrefix)); % local figuresDir, datePrefix
+                figName_p8_fig  = fullfile(figuresDir, sprintf('%s_VisFunc_Plot8_AllPatientSpectra_ConsensusOutliers.fig', datePrefix));
+                
+                if isgraphics(fig8_handle, 'figure')
+                    exportgraphics(fig8_handle, figName_p8_tiff, 'Resolution', 300);
+                    savefig(fig8_handle, figName_p8_fig);
+                    fprintf('Visualization Function: Plot 8 (All Patient Spectra with Consensus Outliers) saved.\n');
+                else
+                     warning('Visualization Function: Plot 8 - Figure handle became invalid before saving.');
+                end
+                if isgraphics(fig8_handle, 'figure'), close(fig8_handle); end
+
+            catch ME_plot8
+                warning('Visualization Function: Plot 8 - Error during plotting: %s. Skipping save.', ME_plot8.message);
+                disp(ME_plot8.getReport);
+                if exist('fig8_handle', 'var') && isgraphics(fig8_handle, 'figure'), close(fig8_handle); end
             end
-            if ~isempty(patient_consensus_outlier_spectra)
-                plot(ax_p8, wavenumbers_roi, patient_consensus_outlier_spectra', 'Color', [color_consensus_outlier_p8, alpha_outlier_p8], 'LineWidth', linewidth_outlier_p8, 'HandleVisibility','off');
-                if ~legend_item_plotted_p8(3), h_legend_items_p8(3) = plot(ax_p8, NaN, NaN, 'Color', color_consensus_outlier_p8, 'LineWidth', 1.5); legend_item_plotted_p8(3) = true; end
-            end
-            hold(ax_p8, 'off'); xlim(ax_p8, plotXLim); ylim(ax_p8, 'auto'); 
-            set(ax_p8, 'XTickMode', 'auto', 'YTickMode', 'auto', 'FontSize', plotFontSize - 4);
-            ax_p8.XDir = 'reverse'; grid(ax_p8, 'off');
-            title(ax_p8, sprintf('%s (%s, %d Kons.-Ausr.)', current_pid_val, char(patient_who_grade_val), num_consensus_outliers_this_probe), 'FontSize', plotFontSize - 3, 'FontWeight', 'normal', 'Interpreter', 'none');
-            current_tile_info_p8 = get(ax_p8,'Layout'); current_col_p8 = mod(current_tile_info_p8.Tile-1, ncols_layout_p8) + 1; current_row_p8 = ceil(current_tile_info_p8.Tile / ncols_layout_p8);
-            if current_col_p8 == 1, ylabel(ax_p8, 'Abs.', 'FontSize', plotFontSize-3); else set(ax_p8, 'YTickLabel',[]); end
-            if current_row_p8 == nrows_layout_p8, xlabel(ax_p8, plotXLabel, 'FontSize', plotFontSize-3); else set(ax_p8, 'XTickLabel',[]); end
         end
-        for i_empty_tile = (num_total_patients_in_train_p8 + 1):(nrows_layout_p8 * ncols_layout_p8), ax_empty = nexttile(tl_p8, i_empty_tile); set(ax_empty, 'Visible', 'off'); end
-        legend_texts_final_p8 = {}; valid_handles_p8 = [];
-        if legend_item_plotted_p8(1), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(1)]; legend_texts_final_p8{end+1} = 'Inlier WHO-1'; end
-        if legend_item_plotted_p8(2), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(2)]; legend_texts_final_p8{end+1} = 'Inlier WHO-3'; end
-        if legend_item_plotted_p8(3), valid_handles_p8 = [valid_handles_p8, h_legend_items_p8(3)]; legend_texts_final_p8{end+1} = 'Konsensus Ausreißer (T2&Q)'; end
-        if ~isempty(valid_handles_p8), lgd_p8 = legend(valid_handles_p8, legend_texts_final_p8, 'FontSize', plotFontSize-1, 'Orientation', 'horizontal'); lgd_p8.Layout.Tile = 'South'; end
-        exportgraphics(fig8_handle,fullfile(figuresDir, sprintf('%s_VisFunc_Plot8_AllPatientSpectra_ConsensusOutliers.tiff',datePrefix)),'Resolution',300);
-        savefig(fig8_handle,fullfile(figuresDir, sprintf('%s_VisFunc_Plot8_AllPatientSpectra_ConsensusOutliers.fig',datePrefix)));
-        fprintf('Visualization Function: Plot 8 (All Patient Spectra with Consensus Outliers) saved.\n'); close(fig8_handle);
     else
         fprintf('Visualization Function: Skipping Plot 8 as no patients/probes found in training data.\n');
     end
 
     fprintf('--- All Exploratory Visualizations Generated by Function ---\n');
-end % End of generate_exploratory_outlier_visualizations function
+    
+% end % This would be the end of your generate_exploratory_outlier_visualizations function
