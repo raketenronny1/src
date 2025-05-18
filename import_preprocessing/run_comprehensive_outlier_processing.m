@@ -110,54 +110,182 @@ fprintf('Data for PCA prepared: %d spectra, %d features.\n', size(X_train_full_f
 
 %% 3. Perform PCA, Calculate T²/Q Statistics & Thresholds (ONCE)
 fprintf('\n--- 3. PCA, T2/Q Calculation & Thresholds ---\n');
-% This section is identical to A3 in the "master script" concept, using X_train_full_flat
-[coeff, score_all_spectra, latent, ~, explained, mu] = pca(X_train_full_flat, 'Algorithm','svd'); % score_all_spectra
-fprintf('PCA completed. Var by 1st PC: %.2f%%\n', explained(1));
 
-cumulativeVariance = cumsum(explained);
-k_model = find(cumulativeVariance >= P.variance_to_explain_for_PCA_model*100, 1, 'first');
-if isempty(k_model), k_model = min(length(explained), size(X_train_full_flat,1)-1); if k_model < 1 && ~isempty(explained), k_model = 1; end; end
-if k_model == 0 && ~isempty(explained), k_model = 1; end
-if isempty(explained) || k_model == 0, error('Could not determine k_model for T2/Q.'); end
-fprintf('k_model (T2/Q) for >=%.0f%% var: %d PCs.\n', P.variance_to_explain_for_PCA_model*100, k_model);
-
-score_k_model = score_all_spectra(:, 1:k_model);
-lambda_k_model = latent(1:k_model); lambda_k_model(lambda_k_model <= eps) = eps;
-T2_values_all = sum(bsxfun(@rdivide, score_k_model.^2, lambda_k_model'), 2);
-n_samples = size(X_train_full_flat, 1);
-
-if n_samples > k_model && k_model > 0
-    T2_threshold = ((k_model*(n_samples-1))/(n_samples-k_model))*finv(1-P.alpha_T2_Q,k_model,n_samples-k_model);
-else
-    T2_threshold = chi2inv(1-P.alpha_T2_Q,k_model);
+if isempty(X_train_full_flat)
+    error('CRITICAL ERROR in Section 3: X_train_full_flat (input to PCA) is empty. Cannot proceed.');
 end
-fprintf('T2 threshold (alpha=%.3f): %.4f\n', P.alpha_T2_Q, T2_threshold);
+if size(X_train_full_flat,1) < 2
+    error('CRITICAL ERROR in Section 3: X_train_full_flat has fewer than 2 samples. PCA cannot be performed meaningfully.');
+end
 
-X_reconstructed = score_all_spectra(:,1:k_model)*coeff(:,1:k_model)' + mu;
-Q_values_all = sum((X_train_full_flat - X_reconstructed).^2, 2);
-num_total_pcs_latent = min(size(X_train_full_flat,1)-1, size(X_train_full_flat,2)); % Max possible PCs from data
-Q_threshold = NaN;
-if k_model < num_total_pcs_latent && k_model < length(latent)
-    discarded_eigenvalues = latent(k_model+1:min(length(latent),num_total_pcs_latent));
-    discarded_eigenvalues(discarded_eigenvalues <= eps) = eps;
-    theta1=sum(discarded_eigenvalues); theta2=sum(discarded_eigenvalues.^2); theta3=sum(discarded_eigenvalues.^3);
-    if theta1>eps && theta2>eps
-        h0_val=1-(2*theta1*theta3)/(3*theta2^2); % Renamed to h0_val
-        if h0_val<=eps || isnan(h0_val) || isinf(h0_val), h0_val=1; fprintf('Warning: h0_val for Q-thresh invalid. Using h0_val=1.\n'); end
-        ca_val=norminv(1-P.alpha_T2_Q); % Renamed to ca_val
-        val_in_bracket=ca_val*sqrt(2*theta2*h0_val^2)/theta1+1+theta2*h0_val*(h0_val-1)/(theta1^2);
-        if val_in_bracket>0, Q_threshold=theta1*(val_in_bracket)^(1/h0_val);
-        else, fprintf('Warning: Val in bracket for Q-thresh non-positive. Using empirical.\n'); Q_threshold = NaN; end
+fprintf('Performing PCA on X_train_full_flat (%d spectra, %d features)...\n', size(X_train_full_flat,1), size(X_train_full_flat,2));
+
+% Ensure X_train_full_flat does not contain NaN/Inf that would break PCA
+if any(isnan(X_train_full_flat(:))) || any(isinf(X_train_full_flat(:)))
+    warning('Data for PCA (X_train_full_flat) contains NaN or Inf values. Attempting to replace with column means (for NaNs) or remove affected rows/cols if severe.');
+    % Simplistic handling: Replace NaNs with mean of column. Inf might need row removal or more sophisticated imputation.
+    if any(isnan(X_train_full_flat(:)))
+        X_train_full_flat = fillmissing(X_train_full_flat, 'mean'); 
+        fprintf('NaNs in X_train_full_flat replaced with column means.\n');
+    end
+    if any(isinf(X_train_full_flat(:)))
+        % For Inf, a common strategy is to remove rows containing Inf, or error out.
+        rows_with_inf = any(isinf(X_train_full_flat),2);
+        if any(rows_with_inf)
+            fprintf('WARNING: %d rows in X_train_full_flat contain Inf values and will be removed before PCA.\n', sum(rows_with_inf));
+            X_train_full_flat(rows_with_inf,:) = [];
+            % IMPORTANT: If rows are removed, all mapping arrays (y_numeric_full_flat, Patient_ID_full_flat, etc.)
+            % MUST be filtered accordingly. This adds significant complexity if not handled carefully from the start.
+            % For now, this is a warning; robust handling would require re-filtering all associated metadata.
+            % A safer approach might be to error out if Inf values are present and require user to clean data first.
+            if isempty(X_train_full_flat)
+                 error('CRITICAL ERROR in Section 3: All data removed after attempting to handle Inf values. Cannot proceed.');
+            end
+        end
     end
 end
-if isnan(Q_threshold)||isinf(Q_threshold)
-    Q_threshold=prctile(Q_values_all,(1-P.alpha_T2_Q)*100);
-    fprintf('Empirical Q-thresh (alpha=%.3f for percentile): %.4g\n', P.alpha_T2_Q,Q_threshold);
-else
-    fprintf('Q-SPE thresh (alpha=%.3f): %.4g\n',P.alpha_T2_Q,Q_threshold);
+
+% PCA Call
+try
+    [coeff_pca, score_pca, latent_pca, tsquared_pca_builtin, explained_pca, mu_pca] = pca(X_train_full_flat, 'Algorithm','svd');
+catch ME_pca
+    fprintf('ERROR during PCA execution: %s\n', ME_pca.message);
+    disp(ME_pca.getReport);
+    error('PCA failed. Cannot continue with outlier detection.');
 end
 
-% Define flags for ALL spectra
+% --- Post-PCA Checks ---
+if isempty(explained_pca) || isempty(latent_pca) || isempty(score_pca) || isempty(coeff_pca)
+    error('PCA did not return expected outputs (explained_pca, latent_pca, score_pca, or coeff_pca is empty). Check input data X_train_full_flat.');
+end
+if explained_pca(1) < 0 || any(explained_pca < -1e-6) % Small negative due to precision sometimes okay, large negatives not.
+    warning('Negative values detected in explained variance from PCA. This is unusual. Proceeding with caution.');
+    % explained_pca(explained_pca < 0) = 0; % Option: Force small negatives to zero
+end
+fprintf('PCA completed. Variance explained by 1st PC: %.2f%%\n', explained_pca(1));
+fprintf('Number of latent roots (eigenvalues) returned by PCA: %d\n', length(latent_pca));
+fprintf('Number of components in `explained_pca`: %d\n', length(explained_pca));
+
+
+% Determine k_model (number of PCs for T2/Q model)
+cumulativeVariance_pca = cumsum(explained_pca);
+k_model_pca = find(cumulativeVariance_pca >= P.variance_to_explain_for_PCA_model*100, 1, 'first');
+
+if isempty(k_model_pca)
+    k_model_pca = length(explained_pca); % Use all available components if threshold not met
+    fprintf('Variance threshold not met by any subset of PCs. Using all %d available PCs for k_model_pca.\n', k_model_pca);
+end
+if k_model_pca == 0 && ~isempty(explained_pca) % Should not happen if explained_pca is not empty
+    k_model_pca = 1;
+    fprintf('k_model_pca was 0, setting to 1.\n');
+end
+if isempty(explained_pca) % This check is now redundant due to earlier check, but good for safety
+    error('CRITICAL: explained_pca is empty after PCA. Cannot determine k_model_pca.');
+end
+if k_model_pca == 0
+    error('CRITICAL: k_model_pca is 0. Cannot proceed with T2/Q calculations that require k_model_pca > 0.');
+end
+fprintf('k_model_pca (T2/Q) for >=%.0f%% variance: %d PCs.\n', P.variance_to_explain_for_PCA_model*100, k_model_pca);
+
+% Hotelling's T-Squared Calculation
+% Ensure k_model_pca does not exceed dimensions of score_pca or latent_pca
+k_model_pca = min(k_model_pca, size(score_pca, 2));
+k_model_pca = min(k_model_pca, length(latent_pca));
+if k_model_pca == 0, error('k_model_pca became 0 after dimension checks. Cannot proceed.'); end
+fprintf('Adjusted k_model_pca after dimension checks: %d PCs.\n', k_model_pca);
+
+temp_score_k = score_pca(:, 1:k_model_pca);
+temp_lambda_k = latent_pca(1:k_model_pca); 
+temp_lambda_k(temp_lambda_k <= eps) = eps; % Prevent division by zero or near-zero
+T2_values_all = sum(bsxfun(@rdivide, temp_score_k.^2, temp_lambda_k'), 2);
+
+% T2 Threshold
+n_samples = size(X_train_full_flat, 1);
+if n_samples > k_model_pca && k_model_pca > 0
+    T2_threshold = ((k_model_pca*(n_samples-1))/(n_samples-k_model_pca))*finv(1-P.alpha_T2_Q,k_model_pca,n_samples-k_model_pca);
+    fprintf('T2 threshold (F-dist, alpha=%.3f): %.4f\n', P.alpha_T2_Q, T2_threshold);
+else
+    if k_model_pca > 0
+        T2_threshold = chi2inv(1-P.alpha_T2_Q,k_model_pca);
+        fprintf('T2 threshold (Chi2-dist, alpha=%.3f, df=%d): %.4f\n', P.alpha_T2_Q, k_model_pca, T2_threshold);
+    else
+        error('k_model_pca is 0, cannot calculate T2_threshold.'); % Should have been caught
+    end
+end
+if isnan(T2_threshold) || isinf(T2_threshold)
+    error('Calculated T2_threshold is NaN or Inf. Check PCA results, k_model_pca, and n_samples.');
+end
+
+
+% Q-Statistic (SPE) Calculation
+% Ensure k_model_pca doesn't exceed dimensions for reconstruction
+k_for_recon = min(k_model_pca, size(coeff_pca,2)); % Number of columns in coeff might be less than latent due to rank
+if k_for_recon == 0, error('k_for_recon is 0. Cannot calculate Q-statistic.'); end
+
+X_reconstructed = score_pca(:,1:k_for_recon) * coeff_pca(:,1:k_for_recon)' + mu_pca;
+Q_values_all = sum((X_train_full_flat - X_reconstructed).^2, 2);
+
+% Q Threshold
+Q_threshold = NaN; % Initialize
+% Max possible PCs based on data dimensionality (rank)
+num_total_actual_pcs = find(latent_pca > eps, 1, 'last'); % Number of non-negligible eigenvalues
+if isempty(num_total_actual_pcs), num_total_actual_pcs = 0; end
+
+fprintf('Number of non-negligible latent roots (eigenvalues): %d\n', num_total_actual_pcs);
+
+if k_model_pca < num_total_actual_pcs % Only if there are PCs left out of the model
+    % Use eigenvalues from k_model_pca + 1 up to the actual rank of the data
+    discarded_eigenvalues = latent_pca(k_model_pca+1 : num_total_actual_pcs);
+    discarded_eigenvalues(discarded_eigenvalues <= eps) = eps; % Ensure positivity
+
+    if ~isempty(discarded_eigenvalues)
+        theta1 = sum(discarded_eigenvalues);
+        theta2 = sum(discarded_eigenvalues.^2);
+        theta3 = sum(discarded_eigenvalues.^3);
+
+        if theta1 > eps && theta2 > eps % Avoid division by zero
+            h0_val=1-(2*theta1*theta3)/(3*theta2^2);
+            if h0_val<=eps || isnan(h0_val) || isinf(h0_val)
+                h0_val=1; 
+                fprintf('Warning: h0_val for Q-thresh invalid or non-positive (%.2g). Using h0_val=1 as fallback.\n', 1-(2*theta1*theta3)/(3*theta2^2));
+            end
+            ca_val=norminv(1-P.alpha_T2_Q);
+            val_in_bracket=ca_val*sqrt(2*theta2*h0_val^2)/theta1 + 1 + (theta2*h0_val*(h0_val-1))/(theta1^2);
+            
+            if val_in_bracket > 0 && h0_val > 0 % Ensure base and exponent are valid for power
+                Q_threshold=theta1*(val_in_bracket)^(1/h0_val);
+            else
+                 fprintf('Warning: Value in bracket for Q_threshold (%.2g) or h0_val (%.2g) is non-positive. Using empirical percentile for Q_threshold.\n', val_in_bracket, h0_val);
+                 Q_threshold = NaN; % Will trigger empirical calculation
+            end
+        else
+            fprintf('Warning: theta1 or theta2 for Q-threshold calculation is near zero. Using empirical percentile.\n');
+            Q_threshold = NaN; % Will trigger empirical calculation
+        end
+    else
+        fprintf('No discarded eigenvalues for Q-statistic calculation (k_model_pca >= num_total_actual_pcs). Q_threshold set to 0.\n');
+        Q_threshold = 0; % No residual variance to model
+    end
+else
+    fprintf('All actual PCs (%d) are included in k_model_pca (%d) or k_model_pca is too large. Q_threshold set to 0 (or empirical if Q_values are non-zero).\n', num_total_actual_pcs, k_model_pca);
+    Q_threshold = 0; % No residual variance to model
+    if any(Q_values_all > eps)
+        fprintf('Warning: Q_values are non-zero even though Q_threshold is theoretically 0. This might indicate k_model_pca needs review or using empirical threshold is better.\n');
+    end
+end
+
+% Fallback to empirical Q_threshold if theoretical calculation failed or resulted in NaN/Inf
+if isnan(Q_threshold) || isinf(Q_threshold)
+    Q_threshold_empirical = prctile(Q_values_all,(1-P.alpha_T2_Q)*100);
+    fprintf('Theoretical Q_threshold failed or invalid. Using empirical Q_threshold (%.1fth percentile): %.4g\n', (1-P.alpha_T2_Q)*100, Q_threshold_empirical);
+    Q_threshold = Q_threshold_empirical;
+    if isnan(Q_threshold) || isinf(Q_threshold) % Final check if prctile also failed (e.g. all Q are same)
+        error('Could not determine a valid Q_threshold. Q_values might be problematic (e.g. all identical or NaN).');
+    end
+end
+fprintf('Final Q-SPE threshold (alpha=%.3f): %.4g\n', P.alpha_T2_Q, Q_threshold);
+
+% Define flags for ALL spectra based on the calculated thresholds
 flag_T2_all = (T2_values_all > T2_threshold);
 flag_Q_all  = (Q_values_all > Q_threshold);
 is_T2_only_all = flag_T2_all & ~flag_Q_all;
@@ -166,22 +294,26 @@ is_T2_and_Q_all = flag_T2_all & flag_Q_all; % Consensus outliers
 is_OR_outlier_all = flag_T2_all | flag_Q_all; % OR outliers (any T2 or any Q)
 is_normal_all = ~is_OR_outlier_all;      % Normal if neither T2 nor Q outlier
 
-fprintf('Spectra counts: Normal=%d, T2-only=%d, Q-only=%d, T2&Q(Consensus)=%d, Any(OR)=%d\n', ...
+fprintf('Spectra counts after T2/Q analysis: Normal=%d, T2-only=%d, Q-only=%d, T2&Q(Consensus)=%d, Any(OR)=%d\n', ...
     sum(is_normal_all),sum(is_T2_only_all),sum(is_Q_only_all),sum(is_T2_and_Q_all), sum(is_OR_outlier_all));
 
 %% 4. Generate All Exploratory Visualizations (NOW A FUNCTION CALL)
 fprintf('\n--- 4. Calling Function to Generate Exploratory Outlier Visualizations ---\n');
-
-P_for_visualization = P; % P is the main parameter struct of run_comprehensive_outlier_processing.m
-P_for_visualization.figuresPath_OutlierExploration = P.figuresPath_OutlierExploration; % Ensure the specific path is passed
+P_for_visualization = P; 
+P_for_visualization.figuresPath_OutlierExploration = P.figuresPath_OutlierExploration;
 
 try
     generate_exploratory_outlier_visualizations(X_train_full_flat, ...
-                                            y_numeric_full_flat, y_cat_full_flat, Patient_ID_full_flat, ...
-                                            wavenumbers_roi, score_A3, explained_A3, coeff_A3, k_model_A3, T2_values_all, Q_values_all, T2_threshold, Q_threshold, ...
-                                            flag_T2_all, flag_Q_all, is_T2_only_all, is_Q_only_all, ...
-                                            is_T2_and_Q_all, is_OR_outlier_all, is_normal_all, ...
-                                            P_for_visualization); % Struct P from main script
+                                                y_numeric_full_flat, y_cat_full_flat, Patient_ID_full_flat, ...
+                                                wavenumbers_roi, ...
+                                                score_pca, ...         % Pass the defined score_pca
+                                                explained_pca, ...     % Pass the defined explained_pca
+                                                coeff_pca, ...         % Pass the defined coeff_pca
+                                                k_model_pca, ...       % Pass the defined k_model_pca
+                                                T2_values_all, Q_values_all, T2_threshold, Q_threshold, ...
+                                                flag_T2_all, flag_Q_all, is_T2_only_all, is_Q_only_all, ...
+                                                is_T2_and_Q_all, is_OR_outlier_all, is_normal_all, ...
+                                                P_for_visualization); 
     fprintf('Successfully called generate_exploratory_outlier_visualizations.\n');
 catch ME_vis_call
     fprintf('ERROR calling generate_exploratory_outlier_visualizations: %s\n', ME_vis_call.message);
@@ -193,10 +325,10 @@ end
 fprintf('\n--- 5. Saving Comprehensive Exploratory Analysis Data ---\n');
 exploratoryOutlierData = struct();
 exploratoryOutlierData.scriptRunDate = P.datePrefix;
-exploratoryOutlierData.dataSource = 'dataTableTrain.mat';
+exploratoryOutlierData.dataSource = 'dataTableTrain.mat (or equivalent structure)';
 exploratoryOutlierData.alpha_T2_Q = P.alpha_T2_Q;
 exploratoryOutlierData.variance_to_explain_for_PCA_model = P.variance_to_explain_for_PCA_model;
-exploratoryOutlierData.k_model = k_model;
+exploratoryOutlierData.k_model = k_model_pca; % <<<< CORRECTED HERE
 
 exploratoryOutlierData.T2_values_all_spectra = T2_values_all;
 exploratoryOutlierData.T2_threshold = T2_threshold;
@@ -208,21 +340,21 @@ exploratoryOutlierData.flag_Q_outlier_all_spectra = flag_Q_all;
 
 exploratoryOutlierData.flag_T2_only_all_spectra = is_T2_only_all;
 exploratoryOutlierData.flag_Q_only_all_spectra = is_Q_only_all;
-exploratoryOutlierData.flag_T2_and_Q_all_spectra = is_T2_and_Q_all; % Consensus
+exploratoryOutlierData.flag_T2_and_Q_all_spectra = is_T2_and_Q_all; 
 exploratoryOutlierData.flag_OR_outlier_all_spectra = is_OR_outlier_all;
 exploratoryOutlierData.flag_Normal_all_spectra = is_normal_all;
 
 exploratoryOutlierData.Original_ProbeRowIndices_map = Original_ProbeRowIndices_flat;
 exploratoryOutlierData.Original_SpectrumIndexInProbe_map = Original_SpectrumIndexInProbe_flat;
-exploratoryOutlierData.Patient_ID_map = Patient_ID_full_flat;
-exploratoryOutlierData.y_numeric_map = y_numeric_full_flat;
-exploratoryOutlierData.y_categorical_map = y_cat_full_flat;
+exploratoryOutlierData.Patient_ID_map = Patient_ID_full_flat; 
+exploratoryOutlierData.y_numeric_map = y_numeric_full_flat;   
+exploratoryOutlierData.y_categorical_map = y_cat_full_flat; 
 
-exploratoryOutlierData.PCA_coeff = coeff;
-exploratoryOutlierData.PCA_mu = mu;
-exploratoryOutlierData.PCA_latent = latent;
-exploratoryOutlierData.PCA_explained = explained;
-exploratoryOutlierData.PCA_scores_all_spectra = score_all_spectra;
+exploratoryOutlierData.PCA_coeff = coeff_pca;         % <<<< Ensure this is coeff_pca
+exploratoryOutlierData.PCA_mu = mu_pca;             % <<<< Ensure this is mu_pca
+exploratoryOutlierData.PCA_latent = latent_pca;       % <<<< Ensure this is latent_pca
+exploratoryOutlierData.PCA_explained = explained_pca;   % <<<< Ensure this is explained_pca
+exploratoryOutlierData.PCA_scores_all_spectra = score_pca; % <<<< Ensure this is score_pca
 
 exploratoryFilename_mat = fullfile(P.resultsPath_OutlierExploration, sprintf('%s_ComprehensiveOutlierAnalysisData.mat', P.datePrefix));
 save(exploratoryFilename_mat, 'exploratoryOutlierData', '-v7.3');
