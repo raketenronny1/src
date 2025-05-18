@@ -12,7 +12,7 @@ clear; clc; close all;
 % --- Define Paths ---
 projectRoot = pwd;
 resultsPath_main = fullfile(projectRoot, 'results');
-comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison_Results'); % Where P2 comparison .mat and CSVs are
+comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison'); % Angepasst!
 resultsPath_P3 = fullfile(resultsPath_main, 'Phase3');
 resultsPath_P4 = fullfile(resultsPath_main, 'Phase4');
 modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
