@@ -162,22 +162,11 @@ function generate_exploratory_outlier_visualizations(input_X_spectra, ...
     
     % --- End of Plots 1-6 ---
 
+  % Inside generate_exploratory_outlier_visualizations.m
+
     % --- PLOT 7: Patient-wise Outlier Spectra Overview (Tiled Layout) ---
     fprintf('\nVisualization Function: Generating Plot 7: Patient-wise Outlier Spectra Overview (OR Outliers)...\n');
-    
-    unique_pids_plot7 = unique(Patient_ID); 
-    patients_to_display_info_p7 = {};
-    for i_pat = 1:length(unique_pids_plot7)
-        current_pid_val = unique_pids_plot7{i_pat};
-        patient_global_indices = find(strcmp(Patient_ID, current_pid_val));
-        if isempty(patient_global_indices), continue; end
-        patient_has_any_flagged_spectrum = any(is_OR_outlier(patient_global_indices)); % Uses local is_OR_outlier
-        if patient_has_any_flagged_spectrum
-            num_OR_flagged_spectra_for_patient = sum(is_OR_outlier(patient_global_indices));
-            patient_who_grade_val = y_cat(patient_global_indices(1)); 
-            patients_to_display_info_p7{end+1,1} = {current_pid_val, num_OR_flagged_spectra_for_patient, patient_who_grade_val};
-        end
-    end
+    % ... (patients_to_display_info_p7 calculation as before) ...
     num_patients_to_plot_p7 = size(patients_to_display_info_p7, 1);
 
     if num_patients_to_plot_p7 > 0
@@ -187,92 +176,92 @@ function generate_exploratory_outlier_visualizations(input_X_spectra, ...
         nrows_layout_p7 = ceil(num_patients_to_plot_p7 / ncols_layout_p7);
         if nrows_layout_p7 == 0, nrows_layout_p7=1; end
         
-        fig7_handle = figure('Name', 'Patienten-Ausreißer Übersicht (Trainingsdaten - OR Outliers)', 'Visible', 'off'); % Create invisible initially
-        % Check if figure creation was successful
+        fig7_handle = figure('Name', 'Patienten-Ausreißer Übersicht (Trainingsdaten - OR Outliers)', 'Visible', 'off');
         if ~isgraphics(fig7_handle, 'figure')
-            warning('Visualization Function: Plot 7 - Failed to create figure handle. Skipping plot.');
-            return; % Or skip just this plot
-        end
-        
-        fig_width_p7 = min(1800, ncols_layout_p7 * 250 + 100); 
-        fig_height_p7 = min(1000, nrows_layout_p7 * 180 + 150);
-        fig7_handle.Position = [30, 30, fig_width_p7, fig_height_p7];
-        
-        try
-            tl_p7 = tiledlayout(fig7_handle, nrows_layout_p7, ncols_layout_p7, 'TileSpacing', 'compact', 'Padding', 'compact');
-            title_str_p7 = sprintf('Übersicht: Ausreißer-Spektren pro Patient (T2 oder Q) - %s', datePrefix);
-            title(tl_p7, title_str_p7, 'FontSize', plotFontSize+2, 'FontWeight', 'normal', 'Interpreter','none');
-
-            color_outlier_highlight_p7 = P_vis.colorOutlierGeneral; 
-            alpha_non_outlier_p7 = 0.3; alpha_outlier_p7 = 0.6; 
-            linewidth_non_outlier_p7 = 0.5; linewidth_outlier_p7 = 0.8;
+            warning('Plot 7: Failed to create figure handle. Skipping plot.');
+            % return; % Or continue to next plot if this function generates multiple
+        else
+            fig_width_p7 = min(1800, ncols_layout_p7 * 250 + 100); 
+            fig_height_p7 = min(1000, nrows_layout_p7 * 180 + 150);
+            fig7_handle.Position = [30, 30, fig_width_p7, fig_height_p7];
             
-            h_legend_items_p7 = gobjects(3,1);
-            legend_item_plotted_p7 = [false, false, false]; 
+            try
+                tl_p7 = tiledlayout(fig7_handle, nrows_layout_p7, ncols_layout_p7, 'TileSpacing', 'compact', 'Padding', 'compact');
+                title_str_p7 = sprintf('Übersicht: Ausreißer-Spektren pro Patient (T2 oder Q) - %s', datePrefix);
+                title(tl_p7, title_str_p7, 'FontSize', plotFontSize+2, 'FontWeight', 'normal', 'Interpreter','none');
 
-            for i_plot = 1:min(num_patients_to_plot_p7, nrows_layout_p7 * ncols_layout_p7)
-                % ... (rest of your plotting loop for each patient in Plot 7 as before) ...
-                 current_patient_info = patients_to_display_info_p7{i_plot}; current_pid = current_patient_info{1};
-                num_flagged_in_patient = current_patient_info{2}; patient_grade = current_patient_info{3};
+                % ... (color definitions, legend handles init as before) ...
+                color_outlier_highlight_p7 = P_vis.colorOutlierGeneral; 
+                alpha_non_outlier_p7 = 0.3; alpha_outlier_p7 = 0.6; 
+                linewidth_non_outlier_p7 = 0.5; linewidth_outlier_p7 = 0.8;
+                h_legend_items_p7 = gobjects(3,1); legend_item_plotted_p7 = [false, false, false]; 
+
+                for i_plot = 1:min(num_patients_to_plot_p7, nrows_layout_p7 * ncols_layout_p7)
+                    current_patient_info = patients_to_display_info_p7{i_plot}; current_pid = current_patient_info{1};
+                    num_flagged_in_patient = current_patient_info{2}; patient_grade = current_patient_info{3};
+                    
+                    ax_p7 = nexttile(tl_p7); % Explicitly pass parent tiledlayout handle
+                    hold(ax_p7, 'on'); box(ax_p7, 'on');
+                    % ... (rest of your plotting logic for this tile, using ax_p7) ...
+                    patient_global_indices = find(strcmp(Patient_ID, current_pid));
+                    patient_all_spectra = X(patient_global_indices, :);
+                    patient_or_outlier_flags = is_OR_outlier(patient_global_indices);
+                    patient_non_outlier_spectra = patient_all_spectra(~patient_or_outlier_flags, :);
+                    patient_outlier_spectra = patient_all_spectra(patient_or_outlier_flags, :);
+                    color_normal_spectra_plot7 = ([0.6 0.6 0.6]); legend_idx_normal = 0;
+                    if patient_grade == 'WHO-1', color_normal_spectra_plot7 = colorWHO1; legend_idx_normal = 1;
+                    elseif patient_grade == 'WHO-3', color_normal_spectra_plot7 = colorWHO3; legend_idx_normal = 2; end
+                    if ~isempty(patient_non_outlier_spectra)
+                        plot(ax_p7, wavenumbers_roi, patient_non_outlier_spectra', 'Color', [color_normal_spectra_plot7, alpha_non_outlier_p7], 'LineWidth', linewidth_non_outlier_p7, 'HandleVisibility','off');
+                        if legend_idx_normal > 0 && ~legend_item_plotted_p7(legend_idx_normal), h_legend_items_p7(legend_idx_normal) = plot(ax_p7, NaN, NaN, 'Color', color_normal_spectra_plot7, 'LineWidth', 1.5); legend_item_plotted_p7(legend_idx_normal) = true; end
+                    end
+                    if ~isempty(patient_outlier_spectra)
+                        plot(ax_p7, wavenumbers_roi, patient_outlier_spectra', 'Color', [color_outlier_highlight_p7, alpha_outlier_p7], 'LineWidth', linewidth_outlier_p7, 'HandleVisibility','off');
+                        if ~legend_item_plotted_p7(3), h_legend_items_p7(3) = plot(ax_p7, NaN, NaN, 'Color', color_outlier_highlight_p7, 'LineWidth', 1.5); legend_item_plotted_p7(3) = true; end
+                    end
+                    hold(ax_p7, 'off'); xlim(ax_p7, plotXLim); ylim(ax_p7, 'auto'); 
+                    set(ax_p7, 'XTickMode', 'auto', 'YTickMode', 'auto', 'FontSize', plotFontSize - 3);
+                    ax_p7.XDir = 'reverse'; grid(ax_p7, 'off'); 
+                    title(ax_p7, sprintf('%s (%s, %d Ausr.)', current_pid, char(patient_grade), num_flagged_in_patient), 'FontSize', plotFontSize - 2, 'FontWeight', 'normal', 'Interpreter', 'none');
+                    current_tile_info_p7 = get(ax_p7,'Layout'); current_col_p7 = mod(current_tile_info_p7.Tile-1, ncols_layout_p7) + 1; current_row_p7 = ceil(current_tile_info_p7.Tile / ncols_layout_p7);
+                    if current_col_p7 == 1, ylabel(ax_p7, 'Abs.', 'FontSize', plotFontSize-2); else set(ax_p7, 'YTickLabel', []); end
+                    if current_row_p7 == nrows_layout_p7, xlabel(ax_p7, plotXLabel, 'FontSize', plotFontSize-2); else set(ax_p7, 'XTickLabel', []); end
+                end % End of patient plotting loop
+
+                legend_texts_final_p7 = {}; valid_handles_p7 = [];
+                if legend_item_plotted_p7(1), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(1)]; legend_texts_final_p7{end+1} = 'Inlier WHO-1'; end
+                if legend_item_plotted_p7(2), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(2)]; legend_texts_final_p7{end+1} = 'Inlier WHO-3'; end
+                if legend_item_plotted_p7(3), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(3)]; legend_texts_final_p7{end+1} = 'Ausreißer (T2 oder Q)'; end
+                if ~isempty(valid_handles_p7)
+                    lgd_p7 = legend(ax_p7, valid_handles_p7, legend_texts_final_p7, 'FontSize', plotFontSize-1, 'Orientation', 'horizontal'); % Use last ax_p7 or a dedicated legend axes
+                    lgd_p7.Layout.Tile = 'South'; 
+                end
+
+                fig7_handle.Visible = 'on'; 
+                drawnow; % Crucial before saving complex layouts
+
+                figName_p7_tiff = fullfile(figuresDir, sprintf('%s_VisFunc_Plot7_PatientWise_OR_OutlierOverview.tiff', datePrefix));
+                figName_p7_fig  = fullfile(figuresDir, sprintf('%s_VisFunc_Plot7_PatientWise_OR_OutlierOverview.fig', datePrefix));
                 
-                ax_p7 = nexttile(tl_p7); % Pass parent tl_p7
-                hold(ax_p7, 'on'); box(ax_p7, 'on');
-                patient_global_indices = find(strcmp(Patient_ID, current_pid));
-                patient_all_spectra = X(patient_global_indices, :);
-                patient_or_outlier_flags = is_OR_outlier(patient_global_indices);
-                patient_non_outlier_spectra = patient_all_spectra(~patient_or_outlier_flags, :);
-                patient_outlier_spectra = patient_all_spectra(patient_or_outlier_flags, :);
-                color_normal_spectra_plot7 = ([0.6 0.6 0.6]); legend_idx_normal = 0;
-                if patient_grade == 'WHO-1', color_normal_spectra_plot7 = colorWHO1; legend_idx_normal = 1;
-                elseif patient_grade == 'WHO-3', color_normal_spectra_plot7 = colorWHO3; legend_idx_normal = 2; end
-                if ~isempty(patient_non_outlier_spectra)
-                    plot(ax_p7, wavenumbers_roi, patient_non_outlier_spectra', 'Color', [color_normal_spectra_plot7, alpha_non_outlier_p7], 'LineWidth', linewidth_non_outlier_p7, 'HandleVisibility','off');
-                    if legend_idx_normal > 0 && ~legend_item_plotted_p7(legend_idx_normal), h_legend_items_p7(legend_idx_normal) = plot(ax_p7, NaN, NaN, 'Color', color_normal_spectra_plot7, 'LineWidth', 1.5); legend_item_plotted_p7(legend_idx_normal) = true; end
+                if isgraphics(fig7_handle, 'figure')
+                    exportgraphics(fig7_handle, figName_p7_tiff, 'Resolution', 300);
+                    savefig(fig7_handle, figName_p7_fig);
+                    fprintf('Visualization Function: Plot 7 (Patient-wise OR Outliers) saved.\n');
+                else
+                    warning('Visualization Function: Plot 7 - Figure handle became invalid before saving.');
                 end
-                if ~isempty(patient_outlier_spectra)
-                    plot(ax_p7, wavenumbers_roi, patient_outlier_spectra', 'Color', [color_outlier_highlight_p7, alpha_outlier_p7], 'LineWidth', linewidth_outlier_p7, 'HandleVisibility','off');
-                    if ~legend_item_plotted_p7(3), h_legend_items_p7(3) = plot(ax_p7, NaN, NaN, 'Color', color_outlier_highlight_p7, 'LineWidth', 1.5); legend_item_plotted_p7(3) = true; end
-                end
-                hold(ax_p7, 'off'); xlim(ax_p7, plotXLim); ylim(ax_p7, 'auto'); 
-                set(ax_p7, 'XTickMode', 'auto', 'YTickMode', 'auto', 'FontSize', plotFontSize - 3);
-                ax_p7.XDir = 'reverse'; grid(ax_p7, 'off'); 
-                title(ax_p7, sprintf('%s (%s, %d Ausr.)', current_pid, char(patient_grade), num_flagged_in_patient), 'FontSize', plotFontSize - 2, 'FontWeight', 'normal', 'Interpreter', 'none');
-                current_tile_info_p7 = get(ax_p7,'Layout'); current_col_p7 = mod(current_tile_info_p7.Tile-1, ncols_layout_p7) + 1; current_row_p7 = ceil(current_tile_info_p7.Tile / ncols_layout_p7);
-                if current_col_p7 == 1, ylabel(ax_p7, 'Abs.', 'FontSize', plotFontSize-2); else set(ax_p7, 'YTickLabel', []); end
-                if current_row_p7 == nrows_layout_p7, xlabel(ax_p7, plotXLabel, 'FontSize', plotFontSize-2); else set(ax_p7, 'XTickLabel', []); end
-            end % End of plotting loop for patients
+                if isgraphics(fig7_handle, 'figure'), close(fig7_handle); end % Close if still valid
 
-            legend_texts_final_p7 = {}; valid_handles_p7 = [];
-            if legend_item_plotted_p7(1), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(1)]; legend_texts_final_p7{end+1} = 'Inlier WHO-1'; end
-            if legend_item_plotted_p7(2), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(2)]; legend_texts_final_p7{end+1} = 'Inlier WHO-3'; end
-            if legend_item_plotted_p7(3), valid_handles_p7 = [valid_handles_p7, h_legend_items_p7(3)]; legend_texts_final_p7{end+1} = 'Ausreißer (T2 oder Q)'; end
-            if ~isempty(valid_handles_p7)
-                lgd_p7 = legend(valid_handles_p7, legend_texts_final_p7, 'FontSize', plotFontSize-1, 'Orientation', 'horizontal');
-                lgd_p7.Layout.Tile = 'South'; 
+            catch ME_plot7
+                warning('Visualization Function: Plot 7 - Error during plotting: %s. Skipping save.', ME_plot7.message);
+                disp(ME_plot7.getReport);
+                if exist('fig7_handle', 'var') && isgraphics(fig7_handle, 'figure'), close(fig7_handle); end
             end
-
-            fig7_handle.Visible = 'on'; % Make it visible before saving
-            drawnow; % Ensure figure is rendered
-
-            figName_p7_tiff = fullfile(figuresDir, sprintf('%s_VisFunc_Plot7_PatientWise_OR_OutlierOverview.tiff', datePrefix));
-            figName_p7_fig  = fullfile(figuresDir, sprintf('%s_VisFunc_Plot7_PatientWise_OR_OutlierOverview.fig', datePrefix));
-            
-            if isgraphics(fig7_handle, 'figure')
-                exportgraphics(fig7_handle, figName_p7_tiff, 'Resolution', 300);
-                savefig(fig7_handle, figName_p7_fig);
-                fprintf('Visualization Function: Plot 7 (Patient-wise OR Outliers) saved.\n');
-            else
-                warning('Visualization Function: Plot 7 - Figure handle became invalid before saving.');
-            end
-            close(fig7_handle);
-
-        catch ME_plot7
-            warning('Visualization Function: Plot 7 - Error during plotting: %s. Skipping save.', ME_plot7.message);
-            if exist('fig7_handle', 'var') && isgraphics(fig7_handle, 'figure'), close(fig7_handle); end
         end
     else
         fprintf('Visualization Function: Skipping Plot 7 as no patients with OR outliers were found.\n');
     end
+    % ... Apply similar try-catch and graphics handle checks for PLOT 8 ...
 
     % --- PLOT 8: Comprehensive Patient-wise Spectra Overview (11x4 Grid, Consensus Outliers) ---
     % This uses is_T2_and_Q (local variable mapped from input_is_T2_and_Q)
