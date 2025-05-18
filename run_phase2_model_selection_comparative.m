@@ -447,163 +447,32 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
     end
 end
 
-%% 6. Visualization and Comparison of Strategies (NEW SECTION)
-fprintf('\n\n====================================================================\n');
-fprintf('   COMPARING OUTLIER STRATEGY EFFECTS ACROSS ALL PIPELINES\n');
-fprintf('====================================================================\n');
+%% 6. Save Overall Comparison Data for Visualization Script (NEW SECTION)
+% =========================================================================
+fprintf('\n--- Saving Overall Comparison Data for Visualization Script ---\n');
 
-% --- Prepare Data for Comparison Plot ---
-pipelines_compare = overallComparisonResults.pipelines; % Defined once
-metricNames_compare = overallComparisonResults.metricNames; % Defined once
-numPipelines_compare = length(pipelines_compare);
-pipelineNamesList_compare = cell(numPipelines_compare, 1);
-for i=1:numPipelines_compare, pipelineNamesList_compare{i} = pipelines_compare{i}.name; end
+% These paths and date string should be defined earlier in your script.
+% Ensure they are accessible here.
+% projectRoot = pwd; % Defined at the start of your script
+% comparisonResultsPath = fullfile(projectRoot, 'results', 'OutlierStrategyComparison_Results'); % Defined at the start
+% dateStrForFilenames = string(datetime('now','Format','yyyyMMdd')); % Defined at the start
 
-targetMetricCompare = 'F2_WHO3';
-targetMetricIdxCompare = find(strcmpi(metricNames_compare, targetMetricCompare));
-if isempty(targetMetricIdxCompare)
-    error('Target metric "%s" for comparison not found.', targetMetricCompare);
-end
-
-mean_OR_values_compare = NaN(numPipelines_compare, 1);
-mean_AND_values_compare = NaN(numPipelines_compare, 1);
-std_OR_values_compare = NaN(numPipelines_compare, 1); 
-std_AND_values_compare = NaN(numPipelines_compare, 1);
-
-for iPipeline = 1:numPipelines_compare
-    % OR Strategy Results
-    if isfield(overallComparisonResults, 'Strategy_OR') && ...
-       isfield(overallComparisonResults.Strategy_OR, 'allPipelinesResults') && ...
-       iPipeline <= length(overallComparisonResults.Strategy_OR.allPipelinesResults) && ...
-       ~isempty(overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline}) && ...
-       isfield(overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline}, 'outerFoldMetrics_mean')
-        
-        mean_metrics_or = overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline}.outerFoldMetrics_mean;
-        std_metrics_or  = overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline}.outerFoldMetrics_std;
-        if length(mean_metrics_or) >= targetMetricIdxCompare
-            mean_OR_values_compare(iPipeline) = mean_metrics_or(targetMetricIdxCompare);
-            std_OR_values_compare(iPipeline) = std_metrics_or(targetMetricIdxCompare);
-        end
-    end
-    % AND Strategy Results
-    if isfield(overallComparisonResults, 'Strategy_AND') && ...
-       isfield(overallComparisonResults.Strategy_AND, 'allPipelinesResults') && ...
-       iPipeline <= length(overallComparisonResults.Strategy_AND.allPipelinesResults) && ...
-       ~isempty(overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline}) && ...
-       isfield(overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline}, 'outerFoldMetrics_mean')
-
-        mean_metrics_and = overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline}.outerFoldMetrics_mean;
-        std_metrics_and  = overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline}.outerFoldMetrics_std;
-        if length(mean_metrics_and) >= targetMetricIdxCompare
-            mean_AND_values_compare(iPipeline) = mean_metrics_and(targetMetricIdxCompare);
-            std_AND_values_compare(iPipeline) = std_metrics_and(targetMetricIdxCompare);
-        end
-    end
-end
-
-% --- Bar Chart Comparison ---
-figCompareBar = figure('Name', ['Comparison of Outlier Strategies - Mean ' targetMetricCompare], 'Position', [100, 100, 1200, 700]);
-bar_data_compare = [mean_OR_values_compare, mean_AND_values_compare];
-b_compare = bar(bar_data_compare);
-hold on;
-numGroups = size(bar_data_compare, 1);
-numBarsPerGroup = size(bar_data_compare, 2); % Should be 2 (OR and AND)
-groupWidth = min(0.8, numBarsPerGroup/(numBarsPerGroup + 1.5));
-for iBar = 1:numBarsPerGroup
-    x_bar_centers = (1:numGroups) - groupWidth/2 + (2*iBar-1) * groupWidth / (2*numBarsPerGroup);
-    if iBar == 1 % OR strategy
-        errorbar(x_bar_centers, mean_OR_values_compare, std_OR_values_compare, 'k.', 'HandleVisibility','off');
-    else % AND strategy
-        errorbar(x_bar_centers, mean_AND_values_compare, std_AND_values_compare, 'k.', 'HandleVisibility','off');
-    end
-end
-hold off;
-
-b_compare(1).FaceColor = [0.9, 0.6, 0.4]; % Orange for OR
-b_compare(2).FaceColor = [0.4, 0.702, 0.902]; % Blue for AND
-
-xticks(1:numPipelines_compare);
-xticklabels(pipelineNamesList_compare);
-xtickangle(45);
-ylabel(['Mean ' strrep(targetMetricCompare, '_', ' ')]);
-title({['Comparison of Outlier Removal Strategies on Mean ' strrep(targetMetricCompare, '_', ' ')], ...
-       '(Error bars represent +/-1 Std. Dev. of outer CV fold scores)'}, 'FontWeight', 'normal');
-legend({'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'}, 'Location', 'NorthEastOutside');
-grid on;
-valid_bar_data = bar_data_compare(~isnan(bar_data_compare));
-valid_std_data = [std_OR_values_compare(~isnan(std_OR_values_compare)); std_AND_values_compare(~isnan(std_AND_values_compare))];
-if ~isempty(valid_bar_data)
-    max_val_for_ylim = max(valid_bar_data(:) + valid_std_data(:), [], 'omitnan');
-    if isempty(max_val_for_ylim) || isnan(max_val_for_ylim) || max_val_for_ylim == 0, max_val_for_ylim = 0.1; end
-     min_val_for_ylim = min(valid_bar_data(:) - valid_std_data(:), [], 'omitnan');
-    if isempty(min_val_for_ylim) || isnan(min_val_for_ylim), min_val_for_ylim = 0; end
-    ylim_padding = (max_val_for_ylim - min_val_for_ylim) * 0.1;
-    if ylim_padding == 0, ylim_padding = 0.05; end
-    final_ylim = [max(0, min_val_for_ylim - ylim_padding), max_val_for_ylim + ylim_padding];
-    if final_ylim(1) >= final_ylim(2), final_ylim = [0, final_ylim(2)+0.1]; end % Ensure valid range
-    ylim(final_ylim);
+if exist('overallComparisonResults', 'var') && isstruct(overallComparisonResults) && ~isempty(fieldnames(overallComparisonResults))
+    % Define the filename for the overall comparison data
+    % This filename pattern matches what 'run_visualize_project_results.m' is looking for.
+    overallComparisonDataFilename = fullfile(comparisonResultsPath, sprintf('%s_Phase2_OverallComparisonData.mat', dateStrForFilenames));
+    
+    % Save the overallComparisonResults structure.
+    % The 'run_visualize_project_results.m' script specifically loads a variable named 'overallComparisonResults'
+    % from this .mat file.
+    save(overallComparisonDataFilename, 'overallComparisonResults', '-v7.3');
+    
+    fprintf('Overall Phase 2 comparison data saved to: %s\n', overallComparisonDataFilename);
 else
-    ylim([0 0.1]); % Default if no valid data
+    fprintf('Warning: The "overallComparisonResults" variable was not found or is empty. \n');
+    fprintf('The overall comparison .mat file required by the visualization script was NOT saved.\n');
+    fprintf('Please ensure "overallComparisonResults" is correctly populated before this section.\n');
 end
 
-
-barPlotCompFilenameBase = fullfile(comparisonFiguresPath, sprintf('%s_BarPlot_OutlierStrategyComparison_%s', dateStrForFilenames, targetMetricCompare));
-savefig(figCompareBar, [barPlotCompFilenameBase, '.fig']);
-exportgraphics(figCompareBar, [barPlotCompFilenameBase, '.tiff'], 'Resolution', 300);
-fprintf('Comprehensive comparison bar plot saved to: %s.(fig/tiff)\n', barPlotCompFilenameBase);
-
-% --- Create and Save Detailed Comparison Table (CSV) ---
-varNamesForDetailedTable = {'PipelineName'};
-for mIdx = 1:length(metricNames_compare)
-    varNamesForDetailedTable{end+1} = [metricNames_compare{mIdx} '_Mean_OR'];
-    varNamesForDetailedTable{end+1} = [metricNames_compare{mIdx} '_Std_OR'];
-end
-for mIdx = 1:length(metricNames_compare)
-    varNamesForDetailedTable{end+1} = [metricNames_compare{mIdx} '_Mean_AND'];
-    varNamesForDetailedTable{end+1} = [metricNames_compare{mIdx} '_Std_AND'];
-end
-
-dataForDetailedTable = cell(numPipelines_compare, length(varNamesForDetailedTable));
-for iPipeline = 1:numPipelines_compare
-    dataForDetailedTable{iPipeline, 1} = pipelineNamesList_compare{iPipeline};
-    idxOffset = 1; % Start after PipelineName
-    
-    % OR Metrics
-    if isfield(overallComparisonResults, 'Strategy_OR') && iPipeline <= length(overallComparisonResults.Strategy_OR.allPipelinesResults) && ~isempty(overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline})
-        results_OR_pipe = overallComparisonResults.Strategy_OR.allPipelinesResults{iPipeline};
-        for mIdx = 1:length(metricNames_compare)
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 1} = results_OR_pipe.outerFoldMetrics_mean(mIdx);
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 2} = results_OR_pipe.outerFoldMetrics_std(mIdx);
-        end
-    else % Fill with NaNs if results are missing for this pipeline under OR
-         for mIdx = 1:length(metricNames_compare)
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 1} = NaN;
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 2} = NaN;
-         end
-    end
-    
-    idxOffset = 1 + 2*length(metricNames_compare); % Move to where AND metrics start
-    % AND Metrics
-    if isfield(overallComparisonResults, 'Strategy_AND') && iPipeline <= length(overallComparisonResults.Strategy_AND.allPipelinesResults) && ~isempty(overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline})
-        results_AND_pipe = overallComparisonResults.Strategy_AND.allPipelinesResults{iPipeline};
-        for mIdx = 1:length(metricNames_compare)
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 1} = results_AND_pipe.outerFoldMetrics_mean(mIdx);
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 2} = results_AND_pipe.outerFoldMetrics_std(mIdx);
-        end
-    else % Fill with NaNs
-         for mIdx = 1:length(metricNames_compare)
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 1} = NaN;
-            dataForDetailedTable{iPipeline, idxOffset + (mIdx-1)*2 + 2} = NaN;
-         end
-    end
-end
-detailedComparisonCSVTable = cell2table(dataForDetailedTable, 'VariableNames', varNamesForDetailedTable);
-disp('Comprehensive Comparison Table (All Metrics):');
-disp(detailedComparisonCSVTable);
-comparisonTableFilename = fullfile(comparisonResultsPath, sprintf('%s_OutlierStrategies_AllMetricsComparison.csv', dateStrForFilenames));
-writetable(detailedComparisonCSVTable, comparisonTableFilename);
-fprintf('Comprehensive comparison CSV table saved to: %s\n', comparisonTableFilename);
-
-
-
-fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete: %s\n', string(datetime('now')));
+% This should be one of the last outputs of your script.
+fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete (with OverallComparisonData save): %s\n', string(datetime('now')));
