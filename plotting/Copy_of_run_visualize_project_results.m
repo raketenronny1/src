@@ -412,7 +412,7 @@ function makeTiledSpiderPlot(mean_metric_OR, std_metric_OR, mean_metric_AND, std
     sgtitle(tl_spider, sprintf('%s Performance Comparison by Outlier Strategy', metricStr), 'FontSize', plotFontSize_arg+2, 'FontWeight','Normal'); 
 
     spiderAxesLabels = pipelineNames'; 
-    axesLabelsOffset_val = 0.1; 
+    axesLabelsOffset_val = 0.3; 
     axesZoom_val = 0.7; % Reset zoom to default, as alignment might fix label issues. Adjust if still needed.
 
     % Settings for the numerical tick labels (0.6-1.0)
@@ -735,3 +735,120 @@ end
 %                             'WHO III', ... % Name of the positive class for Y-axis label
 %                             'Probe Probabilities (Boxplot)', ...
 %                             'Probe Probabilities (Dotplot)');
+
+function fh_feat_imp = plotFeatureImportanceSpectrum(wavenumbers, coefficients, titleStr, options)
+% plotFeatureImportanceSpectrum - Plots the feature importance spectrum.
+%
+% Inputs:
+%   wavenumbers - Vector of wavenumber values.
+%   coefficients - Vector of model coefficients corresponding to each wavenumber.
+%   titleStr - String for the plot title.
+%   options - Struct with optional parameters:
+%             .meanDifferenceSpectrum - (Optional) Mean difference spectrum to overlay.
+%             .mRMR_indices - (Optional) Indices of top mRMR features (relative to wavenumbers).
+%             .peakThresholdFactor - (Optional) Factor of max abs coefficient for peak detection (default 0.4).
+%             .minPeakDistWavenumbers - (Optional) Min distance between peaks in wavenumber units (default 20).
+%
+% Outputs:
+%   fh_feat_imp - Figure handle for the feature importance plot.
+
+    if nargin < 3 || isempty(titleStr)
+        titleStr = 'Feature Importance Spectrum';
+    end
+    if nargin < 4
+        options = struct(); % Initialize empty options struct
+    end
+
+    % Default options
+    if ~isfield(options, 'peakThresholdFactor') || isempty(options.peakThresholdFactor)
+        options.peakThresholdFactor = 0.4;
+    end
+    if ~isfield(options, 'minPeakDistWavenumbers') || isempty(options.minPeakDistWavenumbers)
+        options.minPeakDistWavenumbers = 20; % Adjust as needed based on your wavenumber resolution
+    end
+
+
+    fh_feat_imp = figure;
+    plot(wavenumbers, coefficients, 'b', 'LineWidth', 1.5);
+    hold on;
+
+    legendEntries = {'Model Coefficients'};
+
+    % Overlay mean difference spectrum (optional)
+    if isfield(options, 'meanDifferenceSpectrum') && ~isempty(options.meanDifferenceSpectrum)
+        diffSpec = options.meanDifferenceSpectrum;
+        % Scale for visibility, e.g., normalize to a fraction of coefficient range
+        if max(abs(diffSpec)) > 1e-6 % Avoid division by zero or tiny numbers
+            scaledDifferenceSpectrum = diffSpec * (max(abs(coefficients)) / max(abs(diffSpec))) * 0.3;
+            plot(wavenumbers, scaledDifferenceSpectrum, '--', 'LineWidth', 1, 'Color', [0.8500 0.3250 0.0980 0.7]); % Orange-red, slightly transparent
+            legendEntries{end+1} = 'Scaled Difference Spectrum';
+        else
+            warning('Mean difference spectrum has very small magnitude, not plotting.');
+        end
+    end
+
+    % Mark important peaks
+    absCoeffs = abs(coefficients);
+    peakThreshold = options.peakThresholdFactor * max(absCoeffs);
+    
+    % Use findpeaks on absolute coefficients to find locations
+    [~, locs_indices] = findpeaks(absCoeffs, 'MinPeakHeight', peakThreshold, 'MinPeakDistance', options.minPeakDistWavenumbers / (wavenumbers(2)-wavenumbers(1)));
+    % The 'MinPeakDistance' for findpeaks is in terms of number of samples if 'wavenumbers' is not passed to it directly.
+    % If passing wavenumbers to findpeaks:
+    [~, peak_wavenumbers_locs] = findpeaks(absCoeffs, wavenumbers, 'MinPeakHeight', peakThreshold, 'MinPeakDistance', options.minPeakDistWavenumbers);
+
+
+    if ~isempty(peak_wavenumbers_locs)
+        % Get actual coefficient values at these peak wavenumbers
+        coeffs_at_peaks = interp1(wavenumbers, coefficients, peak_wavenumbers_locs, 'nearest');
+        plot(peak_wavenumbers_locs, coeffs_at_peaks, 'kv', 'MarkerFaceColor', 'k', 'MarkerSize', 7);
+        legendEntries{end+1} = 'Important Peaks';
+        
+        % Optional: Add text labels to peaks
+        % for k_peak = 1:length(peak_wavenumbers_locs)
+        %     text(peak_wavenumbers_locs(k_peak), coeffs_at_peaks(k_peak), sprintf(' %.0f', peak_wavenumbers_locs(k_peak)), ...
+        %          'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 8);
+        % end
+    end
+
+    % Mark mRMR features (optional)
+    if isfield(options, 'mRMR_indices') && ~isempty(options.mRMR_indices)
+        mRMR_wavenumbers_vals = wavenumbers(options.mRMR_indices);
+        % Plot as vertical lines or markers
+        for k_mRMR = 1:length(mRMR_wavenumbers_vals)
+           xline(mRMR_wavenumbers_vals(k_mRMR), 'g--', 'LineWidth', 0.5, 'Label', sprintf('mRMR %.0f', mRMR_wavenumbers_vals(k_mRMR)), 'LabelOrientation', 'horizontal', 'FontSize', 7);
+        end
+        % Or plot markers on the zero line:
+        % plot(mRMR_wavenumbers_vals, zeros(size(mRMR_wavenumbers_vals)), 'g*', 'MarkerSize', 8);
+        legendEntries{end+1} = 'mRMR Features';
+    end
+
+    xlabel('Wavenumber (cm^{-1})');
+    ylabel('Coefficient Value / Importance');
+    title(titleStr);
+    if ~isempty(legendEntries)
+        legend(legendEntries, 'Location', 'best', 'Interpreter', 'none');
+    end
+    grid on;
+    ax = gca;
+    ax.XDir = 'reverse'; % Typical for IR spectra
+    hold off;
+    
+    fprintf('Feature importance spectrum plotted.\n');
+end
+
+% Example of how to call this function:
+% % Assume model_data.wavenumbers, model_data.coefficients are loaded
+% % Optionally, load model_data.meanDiffSpec and model_data.mRMR_feature_idx
+% featImpOptions = struct();
+% if isfield(model_data, 'meanDiffSpec')
+%    featImpOptions.meanDifferenceSpectrum = model_data.meanDiffSpec;
+% end
+% if isfield(model_data, 'mRMR_feature_idx')
+%    featImpOptions.mRMR_indices = model_data.mRMR_feature_idx;
+% end
+% % featImpOptions.peakThresholdFactor = 0.3; % Customize if needed
+% % featImpOptions.minPeakDistWavenumbers = 15; % Customize if needed
+%
+% plotFeatureImportanceSpectrum(model_data.wavenumbers, model_data.coefficients, ...
+%                               'Feature Importance: LDA Model', featImpOptions);
