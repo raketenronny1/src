@@ -172,17 +172,17 @@ fprintf('Spectra counts: Normal=%d, T2-only=%d, Q-only=%d, T2&Q(Consensus)=%d, A
 %% 4. Generate All Exploratory Visualizations (NOW A FUNCTION CALL)
 fprintf('\n--- 4. Calling Function to Generate Exploratory Outlier Visualizations ---\n');
 
-P_for_visualization = P; 
-P_for_visualization.figuresPath_OutlierExploration = P.figuresPath_OutlierExploration;
+P_for_visualization = P; % P is the main parameter struct of run_comprehensive_outlier_processing.m
+P_for_visualization.figuresPath_OutlierExploration = P.figuresPath_OutlierExploration; % Ensure the specific path is passed
 
 try
     generate_exploratory_outlier_visualizations(X_train_full_flat, ...
                                                 y_numeric_full_flat, y_cat_full_flat, Patient_ID_full_flat, ...
                                                 wavenumbers_roi, ...
-                                                score_A3, ...         % CORRECTED: Was score_all_spectra, use score_A3
-                                                explained_A3, ...      % CORRECTED: This was likely correct if defined as such in A3
-                                                coeff_A3, ...          % CORRECTED: Was coeff, use coeff_A3
-                                                k_model_A3, ...        % CORRECTED: Was k_model, use k_model_A3
+                                                score_A3, ...         % PCA scores from Section A3
+                                                explained_A3, ...     % PCA explained variance from Section A3
+                                                coeff_A3, ...         % PCA coefficients from Section A3
+                                                k_model_A3, ...       % k_model from Section A3
                                                 T2_values_all, Q_values_all, T2_threshold, Q_threshold, ...
                                                 flag_T2_all, flag_Q_all, is_T2_only_all, is_Q_only_all, ...
                                                 is_T2_and_Q_all, is_OR_outlier_all, is_normal_all, ...
