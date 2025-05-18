@@ -5,14 +5,22 @@
 %
 % Date: 2025-05-18
 
+% run_visualize_project_results.m
 %% 0. Initialization
 fprintf('GENERATING PROJECT VISUALIZATIONS (Phases 2-4) - %s\n', string(datetime('now')));
 clear; clc; close all;
 
 % --- Define Paths ---
-projectRoot = pwd;
+% Gehe eine Ebene vom aktuellen Pfad (...\plotting) nach oben, um zum projectRoot zu gelangen
+currentScriptPath = fileparts(mfilename('fullpath')); % Pfad zum Ordner, in dem das Skript liegt
+projectRoot = fileparts(fileparts(currentScriptPath)); % Geht ZWEI Ebenen hoch (von .../src/plotting/ zu .../src/ und dann zu .../)
+fprintf('INFO: Project root assumed to be: %s\n', projectRoot); % Zur Überprüfung
+
 resultsPath_main = fullfile(projectRoot, 'results');
-comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison'); % Angepasst!
+% Stelle sicher, dass dies dein korrekter Ordnername ist:
+comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison'); % Ohne "_Results" und im korrekten "results" Ordner
+
+% ... Rest deiner Pfaddefinitionen basierend auf dem korrigierten projectRoot ...
 resultsPath_P3 = fullfile(resultsPath_main, 'Phase3');
 resultsPath_P4 = fullfile(resultsPath_main, 'Phase4');
 modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
@@ -20,11 +28,14 @@ modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
 figuresPath_output = fullfile(projectRoot, 'figures', 'ProjectSummaryFigures');
 if ~isfolder(figuresPath_output), mkdir(figuresPath_output); end
 
+% Für die Phase 2 Vergleichs-Abbildungen, die hier generiert werden
+comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison_Plots_From_VisualizeScript'); % Korrigiert hier auch den Pfad
+if ~isfolder(comparisonFiguresPath), mkdir(comparisonFiguresPath); end
+
 dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
-% Add helper for spider plot
-plottingHelpersPath = fullfile(projectRoot, 'plotting');
-if exist(plottingHelpersPath, 'dir'), addpath(plottingHelpersPath); end
+plottingHelpersPath = fullfile(projectRoot, 'plotting'); % Pfad zu den Helferfunktionen
+ if exist(plottingHelpersPath, 'dir'), addpath(plottingHelpersPath); else, warning('Plotting helpers path not found: %s', plottingHelpersPath); end
 
 % Plotting Defaults
 plotFontSize = 10;
@@ -173,83 +184,117 @@ makeBarChart(mean_AUC_OR, mean_AUC_AND, std_AUC_OR, std_AUC_AND, pipelineNamesLi
              comparisonFiguresPath, dateStrForFilenames, barColors);
 
 
-% --- Helper for Spider Plots ---
-function makeSpiderPlot(dataOR, dataAND, pipelineNames, metricsForSpider, titleStr, figNameSuffix, outputPath, datePrefix, colors)
-    if ~exist('spider_plot_R2019b', 'file')
-        fprintf('spider_plot_R2019b.m not found. Skipping spider plot: %s\n', titleStr);
+fprintf('\n--- Generating Revised Phase 2 Spider Plots (Pipelines as Axes) ---\n');
+
+% --- Neuer Helfer oder angepasste Logik für Spider Plots (Pipelines auf Achsen) ---
+function makePipelineAxesSpiderPlot(metricValuesOR, metricValuesAND, pipelineNames, metricNameStr, titleStrSuffix, figNameSuffix, outputPath, datePrefix, colors)
+    if ~exist('spider_plot_R2019b', 'file') && ~exist('spider_plot', 'file')
+        fprintf('spider_plot_R2019b.m or spider_plot.m not found. Skipping spider plot: %s\n', titleStrSuffix);
         return;
     end
-    numPipelines = length(pipelineNames);
-    spiderAxesLabels = strrep(metricsForSpider, '_', ' ');
-    commonSpiderAxesLimits = repmat([0;1], 1, length(metricsForSpider)); % Assuming 0-1 scale
 
-    for iPipe = 1:numPipelines
-        P_spider = [dataOR(iPipe, :); dataAND(iPipe, :)]; % 2 rows (OR, AND) x N_metrics
-        P_spider(isnan(P_spider)) = 0; % Handle NaNs for plotting
+    P_spider = [metricValuesOR(:)'; metricValuesAND(:)']; % Daten für Spider-Plot: 2 Zeilen (OR, AND) x N_Pipelines Spalten
+    P_spider(isnan(P_spider)) = 0; % Handle NaNs für die Darstellung
 
-        if all(all(P_spider == 0)) % Skip if all data is zero/NaN for this pipeline
-            fprintf('Skipping spider plot for %s: all data is zero/NaN.\n', pipelineNames{iPipe});
-            continue;
+    if size(P_spider, 2) ~= length(pipelineNames)
+        fprintf('Mismatch between number of metric values and pipeline names for spider plot: %s. Skipping.\n', titleStrSuffix);
+        return;
+    end
+    if isempty(P_spider)
+        fprintf('No data for spider plot: %s. Skipping.\n', titleStrSuffix);
+        return;
+    end
+
+    figSpider = figure('Name', sprintf('Spider Plot - %s - %s', metricNameStr, titleStrSuffix), 'Position', [200, 200, 700, 650]);
+    try
+        % Die Achsen des Spider-Plots sind jetzt die Pipeline-Namen
+        spiderAxesLabels = pipelineNames;
+        
+        % Achsen-Limits für Spider-Plot (z.B. 0 bis 1 für Metriken wie AUC, F2)
+        % Du kannst dies dynamischer gestalten oder fix lassen.
+        minValue = 0; % min(P_spider(:),[],'omitnan');
+        maxValue = 1; % max(P_spider(:),[],'omitnan');
+        if minValue >= maxValue, maxValue = minValue + 0.1; end % Fallback
+        if isnan(minValue) || isnan(maxValue)
+            minValue = 0; maxValue = 1;
         end
 
-        figSpider = figure('Name', sprintf('%s - %s', titleStr, pipelineNames{iPipe}), 'Position', [200, 200, 700, 600]);
-        try
+        % Sicherstellen, dass die Limits mindestens einen kleinen Bereich abdecken
+        if maxValue - minValue < 0.1 
+            maxValue = minValue + 0.1;
+        end
+        % Für Metriken wie F2 und AUC ist ein Bereich von 0-1 üblich
+        commonSpiderAxesLimits = repmat([0; 1], 1, length(spiderAxesLabels)); 
+
+
+        if exist('spider_plot_R2019b', 'file')
             spider_plot_R2019b(P_spider, ...
-                'AxesLabels', spiderAxesLabels, 'AxesLimits', commonSpiderAxesLimits, ...
-                'FillOption', {'on', 'on'}, 'FillTransparency', [0.15, 0.15], ...
-                'Color', [colors.OR; colors.AND], 'LineWidth', 1.5, ...
-                'Marker', {'o', 's'}, 'MarkerSize', 50);
-            title(sprintf('%s: %s', titleStr, pipelineNames{iPipe}), 'FontWeight', 'normal');
-            legend({'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'}, 'Location', 'SouthOutside', 'Orientation','horizontal');
-            
-            filenameBase = fullfile(outputPath, sprintf('%s_Spider_%s_%s', datePrefix, figNameSuffix, pipelineNames{iPipe}));
-            exportgraphics(figSpider, [filenameBase, '.tiff'], 'Resolution', 300);
-            savefig(figSpider, [filenameBase, '.fig']);
-            fprintf('Spider plot for "%s - %s" saved.\n', titleStr, pipelineNames{iPipe});
-        catch ME_spider
-            fprintf('Error generating spider plot for %s: %s\n', pipelineNames{iPipe}, ME_spider.message);
+                'AxesLabels', spiderAxesLabels, ...
+                'AxesLimits', commonSpiderAxesLimits, ...
+                'FillOption', {'on', 'on'}, ...
+                'FillTransparency', [0.15, 0.15], ...
+                'Color', [colors.OR; colors.AND], ...
+                'LineWidth', 2, ...
+                'Marker', {'o', 's'}, ...
+                'MarkerSize', 60, ...
+                'AxesFontSize', 9, ...
+                'LabelFontSize', 10);
+        elseif exist('spider_plot', 'file') % Fallback zur älteren Version
+             spider_plot(P_spider, ...
+                'AxesLabels', spiderAxesLabels, ...
+                'AxesLimits', commonSpiderAxesLimits, ...
+                'FillOption', 'on', ...
+                'FillTransparency', [0.15, 0.15], ...
+                'Color', [colors.OR; colors.AND], ...
+                'LineWidth', 2, ...
+                'Marker', 'o', ... % Ältere Version hat ggf. andere Marker-Optionen
+                'MarkerSize', 8); % Ältere Version hat ggf. andere Marker-Optionen
         end
-        if isgraphics(figSpider, 'figure'), close(figSpider); end
+
+        title(sprintf('%s Performance Comparison: %s', metricNameStr, titleStrSuffix), 'FontWeight', 'normal', 'FontSize', plotFontSize);
+        legend({'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'}, 'Location', 'southoutside', 'Orientation','horizontal', 'FontSize', plotFontSize-1);
+        
+        filenameBase = fullfile(outputPath, sprintf('%s_Spider_%s_%s', datePrefix, figNameSuffix, metricNameStr));
+        exportgraphics(figSpider, [filenameBase, '.tiff'], 'Resolution', 300);
+        savefig(figSpider, [filenameBase, '.fig']);
+        fprintf('Pipeline-Axes Spider plot for "%s - %s" saved.\n', metricNameStr, titleStrSuffix);
+    catch ME_spider
+        fprintf('Error generating pipeline-axes spider plot for %s: %s\n', titleStrSuffix, ME_spider.message);
+        disp(ME_spider.getReport);
     end
+    if isgraphics(figSpider, 'figure'), close(figSpider); end
 end
 
-% --- Data for Spider Plots ---
-metricsForF2Spider = {'F2_WHO3', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1'};
-metricsForAUCSpider = {'AUC', 'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1'}; % AUC is primary
+% --- Erzeuge die gewünschten Spider Plots ---
 
-dataF2_OR = NaN(numPipelines_P2, length(metricsForF2Spider));
-dataF2_AND = NaN(numPipelines_P2, length(metricsForF2Spider));
-dataAUC_OR = NaN(numPipelines_P2, length(metricsForAUCSpider));
-dataAUC_AND = NaN(numPipelines_P2, length(metricsForAUCSpider));
+% 1. Spider Plot für mittlere AUC-Werte
+% pipelineNamesList_P2 sind die Achsenbeschriftungen
+% mean_AUC_OR und mean_AUC_AND sind die Datenreihen
+makePipelineAxesSpiderPlot(mean_AUC_OR, mean_AUC_AND, pipelineNamesList_P2, 'Mean AUC', ...
+                           'Pipeline Comparison', 'P2_AUC_Pipelines', ...
+                           comparisonFiguresPath, dateStrForFilenames, barColors);
 
-for p = 1:numPipelines_P2
-    for m_idx = 1:length(metricsForF2Spider)
-        metricN = metricsForF2Spider{m_idx};
-        actual_idx = find(strcmpi(metricNames_P2, metricN));
-        if ~isempty(actual_idx)
-           if isfield(overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p},'outerFoldMetrics_mean'), dataF2_OR(p,m_idx) = overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_mean(actual_idx);end
-           if isfield(overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p},'outerFoldMetrics_mean'), dataF2_AND(p,m_idx) = overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_mean(actual_idx);end
-        end
-    end
-    for m_idx = 1:length(metricsForAUCSpider)
-        metricN = metricsForAUCSpider{m_idx};
-        actual_idx = find(strcmpi(metricNames_P2, metricN));
-         if ~isempty(actual_idx)
-           if isfield(overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p},'outerFoldMetrics_mean'), dataAUC_OR(p,m_idx) = overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_mean(actual_idx);end
-           if isfield(overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p},'outerFoldMetrics_mean'), dataAUC_AND(p,m_idx) = overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_mean(actual_idx);end
-        end
-    end
-end
+% 2. Spider Plot für mittlere F2-WHO3-Werte
+makePipelineAxesSpiderPlot(mean_F2_OR, mean_F2_AND, pipelineNamesList_P2, 'Mean F2-WHO3', ...
+                           'Pipeline Comparison', 'P2_F2_Pipelines', ...
+                           comparisonFiguresPath, dateStrForFilenames, barColors);
 
-% 7. Spider Plot for F2-related metrics
-makeSpiderPlot(dataF2_OR, dataF2_AND, pipelineNamesList_P2, metricsForF2Spider, ...
-               'F2-Focused Performance Metrics', 'P2_F2_Metrics', ...
-               comparisonFiguresPath, dateStrForFilenames, barColors);
+% (Die alte Sektion mit den Spider-Plots, die Metriken auf den Achsen hatten, kann entfernt/auskommentiert werden)
+% % --- Data for Spider Plots (alte Version, die Metriken auf Achsen hatte) ---
+% % metricsForF2Spider = {'F2_WHO3', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1'};
+% % metricsForAUCSpider = {'AUC', 'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1'};
+% % ... (alte dataF2_OR, dataF2_AND, dataAUC_OR, dataAUC_AND Extraktion) ...
+% 
+% % 7. Spider Plot for F2-related metrics (alte Version)
+% % makeSpiderPlot(dataF2_OR, dataF2_AND, pipelineNamesList_P2, metricsForF2Spider, ...
+% %                'F2-Focused Performance Metrics', 'P2_F2_Metrics', ...
+% %                comparisonFiguresPath, dateStrForFilenames, barColors);
+% 
+% % 8. Spider Plot for AUC-related metrics (alte Version)
+% % makeSpiderPlot(dataAUC_OR, dataAUC_AND, pipelineNamesList_P2, metricsForAUCSpider, ...
+% %                'AUC-Focused Performance Metrics', 'P2_AUC_Metrics', ...
+% %                comparisonFiguresPath, dateStrForFilenames, barColors);
 
-% 8. Spider Plot for AUC-related metrics
-makeSpiderPlot(dataAUC_OR, dataAUC_AND, pipelineNamesList_P2, metricsForAUCSpider, ...
-               'AUC-Focused Performance Metrics', 'P2_AUC_Metrics', ...
-               comparisonFiguresPath, dateStrForFilenames, barColors);
 
 
 %% 3. Load Phase 3 Results (Final Model Evaluation)
