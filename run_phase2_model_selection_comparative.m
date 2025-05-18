@@ -382,7 +382,7 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
     resultsFilename_strat = fullfile(resultsPath, sprintf('%s_Phase2_AllPipelineResults_Strat_%s.mat', dateStrForFilenames, currentOutlierStrategy));
     save(resultsFilename_strat, 'currentStrategyPipelinesResults', 'pipelines', 'metricNames', 'numOuterFolds', 'numInnerFolds', 'currentOutlierStrategy');
     fprintf('Phase 2 results for strategy %s saved to: %s\n', currentOutlierStrategy, resultsFilename_strat);
-    
+
 end % --- END OF MAIN LOOP FOR OUTLIER STRATEGIES ---
 
 %% 5. Select Best Overall Pipeline FOR EACH STRATEGY (and report)
@@ -604,64 +604,6 @@ comparisonTableFilename = fullfile(comparisonResultsPath, sprintf('%s_OutlierStr
 writetable(detailedComparisonCSVTable, comparisonTableFilename);
 fprintf('Comprehensive comparison CSV table saved to: %s\n', comparisonTableFilename);
 
-% --- Spider Plot Comparison (Optional, if spider_plot_R2019b.m is available) ---
-% (Spider plot logic from previous response, using overallComparisonResults, can be placed here)
-% (Ensure paths and variable names are consistent with this script's structure)
-if exist('spider_plot_R2019b', 'file') 
-    fprintf('\nAttempting to generate Spider Plot for comparison...\n');
-    % ... (Code from previous response, adapted to use overallComparisonResults,
-    %      pipelines_compare, metricNames_compare, etc.
-    %      Save to comparisonFiguresPath)
-    % Example for one pipeline:
-    if numPipelines_compare > 0 && ~isempty(bestPipelineInfoPerStrategy.Strategy_OR) && ~isempty(bestPipelineInfoPerStrategy.Strategy_AND)
-        % Let's plot the best OR pipeline vs best AND pipeline if they are different
-        % Or just the first pipeline for an example
-        idxSpiderPipe = 1; % Example: first pipeline
-        
-        spider_P_matrix = [];
-        spider_axes_labels = {};
-        metrics_for_spider = {'F2_WHO3', 'Sensitivity_WHO3', 'Specificity_WHO1', 'AUC', 'Accuracy'};
-
-        for iMet = 1:length(metrics_for_spider)
-            metric_name_spider = metrics_for_spider{iMet};
-            metric_idx_spider = find(strcmpi(metricNames_compare, metric_name_spider));
-            if isempty(metric_idx_spider), continue; end
-
-            val_or = NaN; val_and = NaN;
-             if isfield(overallComparisonResults.Strategy_OR.allPipelinesResults{idxSpiderPipe}, 'outerFoldMetrics_mean')
-                val_or = overallComparisonResults.Strategy_OR.allPipelinesResults{idxSpiderPipe}.outerFoldMetrics_mean(metric_idx_spider);
-             end
-             if isfield(overallComparisonResults.Strategy_AND.allPipelinesResults{idxSpiderPipe}, 'outerFoldMetrics_mean')
-                val_and = overallComparisonResults.Strategy_AND.allPipelinesResults{idxSpiderPipe}.outerFoldMetrics_mean(metric_idx_spider);
-             end
-            spider_P_matrix = [spider_P_matrix, [val_or; val_and]];
-            spider_axes_labels{end+1} = strrep(metric_name_spider, '_', ' ');
-        end
-        
-        if ~isempty(spider_P_matrix)
-            spider_P_matrix(isnan(spider_P_matrix)) = 0; % Handle NaNs for spider plot
-            figure('Name', sprintf('Spider Plot Comparison for %s', pipelines_compare{idxSpiderPipe}.name));
-            spider_plot_R2019b(spider_P_matrix', ... % Transpose P so rows are strategies
-                'AxesLabels', spider_axes_labels, ...
-                'AxesLimits', repmat([0;1], 1, length(spider_axes_labels)), ...
-                'FillOption', 'on', ...
-                'FillTransparency', [0.2, 0.1], ...
-                'Color', [[0.9,0.6,0.4]; [0.4,0.702,0.902]], ...
-                'LineWidth', 1.5);
-            title(sprintf('Comparison for %s: OR vs AND Strategy', pipelines_compare{idxSpiderPipe}.name));
-            legend({'T2 OR Q', 'T2 AND Q (Consensus)'}, 'Location', 'bestoutside');
-            
-            spiderPlotFilename = fullfile(comparisonFiguresPath, sprintf('%s_SpiderPlot_CompareStrategies_%s.tiff', dateStrForFilenames, pipelines_compare{idxSpiderPipe}.name));
-            exportgraphics(gcf, spiderPlotFilename, 'Resolution', 300);
-            savefig(gcf, strrep(spiderPlotFilename, '.tiff','.fig'));
-            fprintf('Spider plot for %s saved to %s\n', pipelines_compare{idxSpiderPipe}.name, spiderPlotFilename);
-        else
-            fprintf('Not enough data to generate spider plot for pipeline %s.\n', pipelines_compare{idxSpiderPipe}.name);
-        end
-    end
-else
-    fprintf('spider_plot_R2019b.m not found. Skipping spider plot.\n');
-end
 
 
 fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete: %s\n', string(datetime('now')));
