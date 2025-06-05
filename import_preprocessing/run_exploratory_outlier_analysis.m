@@ -72,108 +72,22 @@ if ~exist('wavenumbers_roi', 'var')
 end
 fprintf('wavenumbers_roi available (%d points).\n', length(wavenumbers_roi));
 
-allSpectra_cell = {}; allLabels_cell = {}; Patient_ID_explore_cell = {};
-allOriginalProbeRowIndices_vec = []; allOriginalSpectrumIndices_InProbe_vec = [];
-fprintf('Extracting spectra from dataTableTrain.CombinedSpectra...\n'); % Assuming CombinedSpectra contains the preprocessed spectra
-for i = 1:height(dataTableTrain)
-    % IMPORTANT: Use the spectra that have undergone initial preprocessing
-    % (e.g., smoothing, SNV, L2-norm) as per your workflow.
-    % If 'CombinedSpectra' in dataTableTrain already holds these, this is fine.
-    % If not, you might need to load/generate them here or ensure dataTableTrain is already processed.
-    spectraMatrix = dataTableTrain.CombinedSpectra{i};
-    
-    if isempty(spectraMatrix) || ~isnumeric(spectraMatrix) || ndims(spectraMatrix) ~= 2
-        warning('Row %d (Diss_ID: %s): CombinedSpectra is empty or invalid. Skipping.', i, dataTableTrain.Diss_ID{i});
-        continue;
-    end
-    if size(spectraMatrix,1) == 0
-        warning('Row %d (Diss_ID: %s): CombinedSpectra contains 0 spectra. Skipping.', i, dataTableTrain.Diss_ID{i});
-        continue;
-    end
-    if size(spectraMatrix,2) ~= length(wavenumbers_roi)
-        warning('Row %d (Diss_ID: %s): Wavenumber mismatch (Expected %d, Got %d). Skipping.', i, dataTableTrain.Diss_ID{i}, length(wavenumbers_roi), size(spectraMatrix,2));
-        continue;
-    end
-
-    numIndSpectra = size(spectraMatrix, 1);
-    allSpectra_cell{end+1,1} = spectraMatrix;
-    allLabels_cell{end+1,1} = repmat(dataTableTrain.WHO_Grade(i), numIndSpectra, 1);
-    Patient_ID_explore_cell{end+1,1} = repmat(dataTableTrain.Diss_ID(i), numIndSpectra, 1);
-    allOriginalProbeRowIndices_vec = [allOriginalProbeRowIndices_vec; repmat(i, numIndSpectra, 1)];
-    allOriginalSpectrumIndices_InProbe_vec = [allOriginalSpectrumIndices_InProbe_vec; (1:numIndSpectra)'];
-end
-if isempty(allSpectra_cell), error('No valid spectra extracted for outlier analysis.'); end
-
-X = cell2mat(allSpectra_cell);
-y_cat = cat(1, allLabels_cell{:});
-Patient_ID = vertcat(Patient_ID_explore_cell{:}); % Cell array of strings
-Original_ProbeRowIndices = allOriginalProbeRowIndices_vec;
-Original_SpectrumIndexInProbe = allOriginalSpectrumIndices_InProbe_vec;
-
-y_numeric = zeros(length(y_cat), 1);
-categories_y = categories(y_cat);
-idx_who1 = find(strcmp(categories_y, 'WHO-1')); idx_who3 = find(strcmp(categories_y, 'WHO-3'));
-if ~isempty(idx_who1), y_numeric(y_cat == categories_y{idx_who1}) = 1; end
-if ~isempty(idx_who3), y_numeric(y_cat == categories_y{idx_who3}) = 3; end
+[X, y_numeric, y_cat, Patient_ID, Original_ProbeRowIndices, Original_SpectrumIndexInProbe] = ...
+    flatten_spectra_for_pca(dataTableTrain, length(wavenumbers_roi));
 fprintf('Data for analysis: %d spectra selected, %d features.\n', size(X,1), size(X,2));
 
 %% --- 2. Perform PCA, Calculate T² and Q Statistics & Thresholds ---
 fprintf('\n--- 2. PCA, T2/Q Calculation & Thresholds ---\n');
-[coeff, score, latent, ~, explained, mu] = pca(X, 'Algorithm','svd');
-fprintf('PCA completed. Var by 1st PC: %.2f%%\n', explained(1));
-cumulativeVariance = cumsum(explained);
-k_model = find(cumulativeVariance >= P.variance_to_explain_for_PCA_model*100, 1, 'first');
-if isempty(k_model), k_model = min(length(explained), size(X,1)-1); if k_model < 1 && ~isempty(explained), k_model = 1; end; end
-if k_model == 0 && ~isempty(explained), k_model = 1; end
-if isempty(explained) || k_model == 0, error('Could not determine k_model for T2/Q.'); end
-fprintf('k_model (T2/Q) for >=%.0f%% var: %d PCs.\n', P.variance_to_explain_for_PCA_model*100, k_model);
-
-score_k = score(:, 1:k_model); lambda_k = latent(1:k_model); lambda_k(lambda_k <= eps) = eps;
-T2_values = sum(bsxfun(@rdivide, score_k.^2, lambda_k'), 2);
-n_samples = size(X, 1);
-
-if n_samples > k_model && k_model > 0
-    T2_threshold = ((k_model*(n_samples-1))/(n_samples-k_model))*finv(1-P.alpha_T2_Q,k_model,n_samples-k_model);
-else
-    T2_threshold = chi2inv(1-P.alpha_T2_Q,k_model);
-end
-fprintf('T2 threshold (alpha=%.3f): %.4f\n', P.alpha_T2_Q, T2_threshold);
-
-X_reconstructed = score(:,1:k_model)*coeff(:,1:k_model)' + mu;
-Q_values = sum((X - X_reconstructed).^2, 2);
-num_total_pcs = min(size(X,1)-1, size(X,2));
-Q_threshold = NaN;
-if k_model < num_total_pcs && k_model < length(latent) % Ensure k_model is less than available latent values
-    discarded_eigenvalues = latent(k_model+1:min(length(latent),num_total_pcs));
-    discarded_eigenvalues(discarded_eigenvalues <= eps) = eps;
-    theta1=sum(discarded_eigenvalues); theta2=sum(discarded_eigenvalues.^2); theta3=sum(discarded_eigenvalues.^3);
-    if theta1>eps && theta2>eps
-        h0=1-(2*theta1*theta3)/(3*theta2^2);
-        if h0<=eps || isnan(h0) || isinf(h0), h0=1; fprintf('Warning: h0 for Q-thresh invalid. Using h0=1.\n'); end
-        ca=norminv(1-P.alpha_T2_Q);
-        val_in_bracket=ca*sqrt(2*theta2*h0^2)/theta1+1+theta2*h0*(h0-1)/(theta1^2);
-        if val_in_bracket>0,Q_threshold=theta1*(val_in_bracket)^(1/h0);
-        else, fprintf('Warning: Val in bracket for Q-thresh non-positive. Using empirical.\n'); Q_threshold = NaN; end
-    end
-end
-if isnan(Q_threshold)||isinf(Q_threshold)
-    Q_threshold=prctile(Q_values,(1-P.alpha_T2_Q)*100);
-    fprintf('Empirical Q-thresh (alpha=%.3f for percentile): %.4g\n', P.alpha_T2_Q,Q_threshold);
-else
-    fprintf('Q-SPE thresh (alpha=%.3f): %.4g\n',P.alpha_T2_Q,Q_threshold);
-end
-
-flag_T2 = (T2_values > T2_threshold);
-flag_Q = (Q_values > Q_threshold);
-is_T2_only = flag_T2 & ~flag_Q;
-is_Q_only = ~flag_T2 & flag_Q;
-is_T2_and_Q = flag_T2 & flag_Q; % Consensus outliers
-is_OR_outlier = flag_T2 | flag_Q; % OR outliers
-is_normal = ~is_OR_outlier; % Normal if neither T2 nor Q outlier
-
-fprintf('Spectra counts: Normal=%d, T2-only=%d, Q-only=%d, T2&Q (Consensus)=%d, Any (T2 or Q)=%d\n', ...
-    sum(is_normal),sum(is_T2_only),sum(is_Q_only),sum(is_T2_and_Q), sum(is_OR_outlier));
-
+results_pca = compute_pca_t2_q(X, P.alpha_T2_Q, P.variance_to_explain_for_PCA_model);
+coeff = results_pca.coeff; score = results_pca.score; latent = results_pca.latent;
+explained = results_pca.explained; mu = results_pca.mu; k_model = results_pca.k_model;
+T2_values = results_pca.T2_values; Q_values = results_pca.Q_values;
+T2_threshold = results_pca.T2_threshold; Q_threshold = results_pca.Q_threshold;
+flag_T2 = results_pca.flag_T2; flag_Q = results_pca.flag_Q;
+is_T2_only = results_pca.is_T2_only; is_Q_only = results_pca.is_Q_only;
+is_T2_and_Q = results_pca.is_T2_and_Q; is_OR_outlier = results_pca.is_OR_outlier;
+is_normal = results_pca.is_normal;
+fprintf('PCA completed. k_{model}=%d, T2 threshold=%.4f, Q threshold=%.4g\n', k_model, T2_threshold, Q_threshold);
 %% --- 3. Generate Requested Visualizations ---
 % (This entire section with PLOT 1 through PLOT 6 remains the same as your current script)
 % Make sure the variables used for plotting (is_normal, is_T2_only, is_Q_only, is_T2_and_Q)
