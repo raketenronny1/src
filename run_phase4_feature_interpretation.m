@@ -1,4 +1,5 @@
-% run_phase4_feature_interpretation.m
+function run_phase4_feature_interpretation(cfg)
+%RUN_PHASE4_FEATURE_INTERPRETATION
 %
 % Script for Phase 4: Final Interpretation & Reporting.
 % Focuses on identifying key discriminative wavenumbers from the final
@@ -8,11 +9,17 @@
 
 %% 0. Initialization
 % =========================================================================
-clear; clc; close all;
 fprintf('PHASE 4: Feature Interpretation - %s\n', string(datetime('now')));
 
+if nargin < 1
+    cfg = struct();
+end
+if ~isfield(cfg, 'projectRoot')
+    cfg.projectRoot = pwd;
+end
+
 % --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
+projectRoot = cfg.projectRoot; % Assumes current working directory is project root unless overridden
 if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
     error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
            'main project root directory before running. Current directory is: %s'], projectRoot);
@@ -413,4 +420,5 @@ if ~isempty(X_train_for_mean_spectra)
     fprintf('Mean spectra plot with highlighted features saved to: %s.(fig/tiff)\n', meanSpectraPlotFilenameBase);
 else
     fprintf('Skipping mean spectra plot due to missing training data for plotting.\n');
+end
 end

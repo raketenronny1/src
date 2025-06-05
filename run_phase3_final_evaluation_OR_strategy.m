@@ -1,4 +1,5 @@
-% run_phase3_final_evaluation_OR_strategy.m % RENAMED for clarity
+function run_phase3_final_evaluation_OR_strategy(cfg)
+%RUN_PHASE3_FINAL_EVALUATION_OR_STRATEGY
 %
 % Script for Phase 3: Final Model Training & Unbiased Evaluation.
 % Focuses on the "T2 OR Q" outlier strategy.
@@ -12,11 +13,17 @@
 
 %% 0. Initialization
 % =========================================================================
-clear; clc; close all;
 fprintf('PHASE 3: Final Model Training & Unbiased Evaluation (T2 OR Q Strategy) - %s\n', string(datetime('now')));
 
+if nargin < 1
+    cfg = struct();
+end
+if ~isfield(cfg, 'projectRoot')
+    cfg.projectRoot = pwd;
+end
+
 % --- Define Paths ---
-projectRoot = pwd; 
+projectRoot = cfg.projectRoot;
 if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
     error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
            'main project root directory before running. Current directory is: %s'], projectRoot);
@@ -422,3 +429,4 @@ close(figProbDist_OR);
 % Violin plots can also be generated here if desired, similar to the probe probability plot
 
 fprintf('\nPHASE 3 Processing Complete (Focused on OR Strategy): %s\n', string(datetime('now')));
+end

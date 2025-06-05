@@ -1,4 +1,5 @@
-% run_phase2_model_selection_comparative.m
+function run_phase2_model_selection_comparative(cfg)
+%RUN_PHASE2_MODEL_SELECTION_COMPARATIVE
 %
 % Main script for Phase 2: Model and Feature Selection Pipelines.
 % Implements nested cross-validation to find the best combination of
@@ -10,10 +11,19 @@
 
 %% 0. Initialization
 fprintf('PHASE 2: Model Selection & Outlier Strategy Comparison - %s\n', string(datetime('now')));
-clear; clc; close all;
+
+if nargin < 1
+    cfg = struct();
+end
+if ~isfield(cfg, 'projectRoot')
+    cfg.projectRoot = pwd;
+end
+if ~isfield(cfg, 'outlierStrategiesToCompare')
+    cfg.outlierStrategiesToCompare = {'OR', 'AND'};
+end
 
 % --- Define Paths ---
-projectRoot = pwd; 
+projectRoot = cfg.projectRoot;
 if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
     error('Project structure not found. Run from project root. Current: %s', projectRoot);
 end
@@ -36,7 +46,7 @@ for i=1:length(dirToEnsure), if ~isfolder(dirToEnsure{i}), mkdir(dirToEnsure{i})
 dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
 % --- Define Outlier Strategies to Compare & Result Storage ---
-outlierStrategiesToCompare = {'OR', 'AND'};
+outlierStrategiesToCompare = cfg.outlierStrategiesToCompare;
 overallComparisonResults = struct(); 
 
 %% --- MAIN LOOP FOR OUTLIER STRATEGIES ---
@@ -476,3 +486,4 @@ end
 
 % This should be one of the last outputs of your script.
 fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete (with OverallComparisonData save): %s\n', string(datetime('now')));
+end
