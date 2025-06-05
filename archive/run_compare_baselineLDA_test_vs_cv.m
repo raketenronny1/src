@@ -13,22 +13,13 @@
 clear; clc; close all;
 fprintf('COMPARING BaselineLDA: Test Set vs. Nested CV Performance - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
+% --- Define Paths ---
+P = setup_project_paths();
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-addpath(helperFunPath);
+addpath(P.helperFunPath);
 
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results'); % For loading Phase 2 results
+dataPath    = P.dataPath;
+resultsPath = P.resultsPath; % For loading Phase 2 results
 
 dateStr = string(datetime('now','Format','yyyyMMdd')); % For any new outputs if needed
 

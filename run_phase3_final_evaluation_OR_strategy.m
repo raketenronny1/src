@@ -16,24 +16,15 @@ clear; clc; close all;
 fprintf('PHASE 3: Final Model Training & Unbiased Evaluation (T2 OR Q Strategy) - %s\n', string(datetime('now')));
 
 % --- Define Paths ---
-projectRoot = pwd; 
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
+P = setup_project_paths();
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-addpath(helperFunPath);
+addpath(P.helperFunPath);
 
-dataPath         = fullfile(projectRoot, 'data');
-phase2ModelsPath = fullfile(projectRoot, 'models', 'Phase2'); % For loading best hyperparameters
-resultsPath_P3   = fullfile(projectRoot, 'results', 'Phase3'); % General Phase 3 results
-modelsPath_P3    = fullfile(projectRoot, 'models', 'Phase3');   
-figuresPath_P3   = fullfile(projectRoot, 'figures', 'Phase3'); 
+dataPath         = P.dataPath;
+phase2ModelsPath = fullfile(P.modelsPath, 'Phase2'); % For loading best hyperparameters
+resultsPath_P3   = fullfile(P.resultsPath, 'Phase3'); % General Phase 3 results
+modelsPath_P3    = fullfile(P.modelsPath, 'Phase3');
+figuresPath_P3   = fullfile(P.figuresPath, 'Phase3');
 
 if ~exist(resultsPath_P3, 'dir'), mkdir(resultsPath_P3); end
 if ~exist(modelsPath_P3, 'dir'), mkdir(modelsPath_P3); end

@@ -20,9 +20,12 @@
 clear; clc; close all;
 fprintf('Applying Consensus Outlier Strategy - %s\n', string(datetime('now')));
 
-projectRoot = pwd;
-dataPath    = fullfile(projectRoot, 'data');
-resultsPath = fullfile(projectRoot, 'results'); % Where outlierInfo and cleaned tables are
+P = setup_project_paths();
+
+addpath(P.helperFunPath);
+
+dataPath    = P.dataPath;
+resultsPath = P.resultsPath; % Where outlierInfo and cleaned tables are
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 

@@ -13,26 +13,15 @@
 %% 0. Initialization
 fprintf('PHASE 2: Model and Feature Selection - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
+% --- Define Paths ---
+P = setup_project_paths();
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-addpath(helperFunPath);
+addpath(P.helperFunPath);
 
-% ***** THIS IS THE CRUCIAL ADDITION/CORRECTION *****
-dataPath      = fullfile(projectRoot, 'data'); % Define dataPath
-resultsPath   = fullfile(projectRoot, 'results', 'Phase2'); % Specific to Phase 2
-modelsPath    = fullfile(projectRoot, 'models', 'Phase2');   % Specific to Phase 2
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase2'); % Specific to Phase 2
-% ***************************************************
+dataPath    = P.dataPath; % Define dataPath
+resultsPath = fullfile(P.resultsPath, 'Phase2'); % Specific to Phase 2
+modelsPath  = fullfile(P.modelsPath, 'Phase2');
+figuresPath = fullfile(P.figuresPath, 'Phase2');
 
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 if ~exist(modelsPath, 'dir'), mkdir(modelsPath); end

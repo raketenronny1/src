@@ -12,14 +12,12 @@ clear; clc; close all;
 fprintf('Generating Phase 1 Dissertation Figures - %s\n', string(datetime('now')));
 
 % --- Define Paths ---
-projectRoot = pwd; 
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory. Current directory is: %s'], projectRoot);
-end
+P = setup_project_paths();
 
-dataPath      = fullfile(projectRoot, 'data');
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase1_Dissertation_Plots');
+addpath(P.helperFunPath);
+
+dataPath    = P.dataPath;
+figuresPath = fullfile(P.figuresPath, 'Phase1_Dissertation_Plots');
 if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
 dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
@@ -275,10 +273,10 @@ end
 outlier_plots_data_ready = false; % Flag to indicate if data for these plots is loaded
 try
     fprintf('\nLoading data for Outlier Figures 3, 4, 5...\n');
-    outlierResultsDir = fullfile(projectRoot, 'results'); 
+    outlierResultsDir = P.resultsPath;
     outlierInfoFiles = dir(fullfile(outlierResultsDir, '*_PCA_HotellingT2_Q_OutlierInfo.mat')); % Search in main results for now
     if isempty(outlierInfoFiles) % Try Phase1_Plots subfolder too
-        outlierInfoFiles = dir(fullfile(projectRoot, 'results', 'Phase1_Plots', '*_PCA_HotellingT2_Q_OutlierInfo.mat'));
+        outlierInfoFiles = dir(fullfile(P.resultsPath, 'Phase1_Plots', '*_PCA_HotellingT2_Q_OutlierInfo.mat'));
     end
     if isempty(outlierInfoFiles)
         error('No outlier info file (*_PCA_HotellingT2_Q_OutlierInfo.mat) found.');
