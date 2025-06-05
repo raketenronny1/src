@@ -653,30 +653,102 @@ if exist('h_mis_temp','var') && isgraphics(h_mis_temp) && plotted_legend_misclas
     legend_texts_final{end+1} = 'Misclassified Probe (by Mean Prob.)';
 end
 
-% Add legend entries for violin fill colors (predicted classes)
-% Create dummy patches for these as fill objects were 'HandleVisibility','off'
-dummy_pred_who1 = fill(NaN,NaN, colorWHO1, 'FaceAlpha', 0.6, 'EdgeColor', 'none');
-dummy_pred_who3 = fill(NaN,NaN, colorWHO3, 'FaceAlpha', 0.6, 'EdgeColor', 'none');
+% In run_phase3_final_evaluation.m, replace the existing legend construction for the Violin Plot:
+
+% --- Axes and Labels ---
+% (Previous code for setting YTick, YTickLabel, YDir, ylim, xlim, xlabel, ylabel, title, grid for the violin plot axes)
+% Let's assume the axes handle for the violin plot is 'ax' (typically gca after plotting the violins)
+% If you've explicitly named your violin plot axes, e.g., ax_violin = gca; use ax_violin.
+% For this example, I'll assume 'gca' is the correct handle for the violin plot axes at this point.
+ax_violin_plot = gca; % Get handle to the current axes where violins were plotted
+
+% --- Construct Legend More Robustly ---
+legend_handles_final = gobjects(0); % Initialize as an empty graphics object array
+legend_texts_final = {};   % Initialize as an empty cell array
+
+% Conditionally created handles (h_true1_temp, h_true3_temp, h_mis_temp)
+% should have been created on ax_violin_plot if they were made within the violin plotting loop.
+% h_thresh_line was also plotted on ax_violin_plot.
+
+if exist('h_true1_temp','var') && isgraphics(h_true1_temp)
+    legend_handles_final(end+1) = h_true1_temp;
+    legend_texts_final{end+1} = 'True WHO-1';
+end
+if exist('h_true3_temp','var') && isgraphics(h_true3_temp)
+    legend_handles_final(end+1) = h_true3_temp;
+    legend_texts_final{end+1} = 'True WHO-3';
+end
+
+% h_thresh_line should always exist if the plot got this far
+if exist('h_thresh_line','var') && isgraphics(h_thresh_line)
+    legend_handles_final(end+1) = h_thresh_line;
+    legend_texts_final{end+1} = 'Decision Threshold (0.5)';
+end
+
+% plotted_legend_misclassified is a flag set if h_mis_temp was created
+if exist('plotted_legend_misclassified','var') && plotted_legend_misclassified && exist('h_mis_temp','var') && isgraphics(h_mis_temp)
+    legend_handles_final(end+1) = h_mis_temp;
+    legend_texts_final{end+1} = 'Misclassified Probe (by Mean Prob.)';
+end
+
+% Create dummy patches for violin fill colors, ensuring they are associated with the violin plot's axes
+% These are always added.
+dummy_pred_who1 = fill(ax_violin_plot, NaN, NaN, colorWHO1, 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'HandleVisibility', 'on'); % Ensure HandleVisibility is on for legend items
+dummy_pred_who3 = fill(ax_violin_plot, NaN, NaN, colorWHO3, 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'HandleVisibility', 'on');
 legend_handles_final(end+1) = dummy_pred_who1;
 legend_texts_final{end+1} = 'Violin/Pred. WHO-1';
 legend_handles_final(end+1) = dummy_pred_who3;
 legend_texts_final{end+1} = 'Violin/Pred. WHO-3';
 
-
-if ~isempty(legend_handles_final)
-    legend(legend_handles_final, legend_texts_final, 'Location', 'SouthOutside', 'Orientation', 'horizontal', 'NumColumns', 3);
-else
-    fprintf('Warning: No elements for legend.\n');
+% Filter out any invalid handles just before creating the legend
+valid_legend_mask = isgraphics(legend_handles_final);
+if any(~valid_legend_mask)
+    fprintf('Warning: Some handles collected for the violin plot legend were invalid. Filtering them out.\n');
+    disp('Indices of invalid handles before filtering:');
+    disp(find(~valid_legend_mask));
+    legend_handles_final = legend_handles_final(valid_legend_mask);
+    legend_texts_final = legend_texts_final(valid_legend_mask);
 end
 
-set(gca, 'FontSize', 10);
+% Create the legend if there are valid items
+if ~isempty(legend_handles_final) && ~isempty(legend_texts_final) && (length(legend_handles_final) == length(legend_texts_final))
+    try
+        legend(ax_violin_plot, legend_handles_final, legend_texts_final, 'Location', 'SouthOutside', 'Orientation', 'horizontal', 'NumColumns', 3);
+        fprintf('Violin plot legend created successfully.\n');
+    catch ME_legend
+        fprintf('ERROR creating violin plot legend: %s\n', ME_legend.message);
+        disp('Final legend_handles_final:'); disp(legend_handles_final);
+        disp('Final legend_texts_final:'); disp(legend_texts_final);
+    end
+else
+    fprintf('Warning: No valid elements for violin plot legend or mismatch between handles and texts. Legend skipped.\n');
+    if isempty(legend_handles_final)
+        disp('Reason: legend_handles_final is empty.');
+    elseif isempty(legend_texts_final)
+        disp('Reason: legend_texts_final is empty.');
+    else
+        fprintf('Reason: Mismatch in lengths. Handles: %d, Texts: %d.\n', length(legend_handles_final), length(legend_texts_final));
+    end
+end
 
-% Save the figure
+set(gca, 'FontSize', 10); % This was 'set(gca, 'FontSize', 10);' in your original code, ensure gca is ax_violin_plot here
+
+% Save the figure (ensure figViolin is the correct handle for the figure containing the violin plot)
+% Assuming the figure was created with: figViolin = figure(...);
 probeViolinFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevelViolinProbabilities_TestSet', dateStr));
-savefig(gcf, [probeViolinFigFilenameBase, '.fig']);
-exportgraphics(gcf, [probeViolinFigFilenameBase, '.tiff'], 'Resolution', 300);
-fprintf('Probe-level violin probability plot saved to: %s.(fig/tiff)\n', probeViolinFigFilenameBase);
-
+% Ensure 'figViolin' is the correct figure handle for the violin plot
+current_fig_handle_for_violin = gcf; % Or if you stored it e.g., fig_violin_plot_handle = figure(...);
+if isgraphics(current_fig_handle_for_violin)
+    try
+        savefig(current_fig_handle_for_violin, [probeViolinFigFilenameBase, '.fig']);
+        exportgraphics(current_fig_handle_for_violin, [probeViolinFigFilenameBase, '.tiff'], 'Resolution', 300);
+        fprintf('Probe-level violin probability plot saved to: %s.(fig/tiff)\n', probeViolinFigFilenameBase);
+    catch ME_save_violin
+         fprintf('ERROR saving violin plot: %s\n', ME_save_violin.message);
+    end
+else
+    fprintf('WARNING: Violin plot figure handle is invalid. Plot not saved.\n');
+end
 
 %% 6. Additional Visualizations (Spectrum-Level ROC and DET Curves)
 % =========================================================================
