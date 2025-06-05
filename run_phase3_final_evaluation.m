@@ -1,4 +1,5 @@
-% run_phase3_final_evaluation.m
+function run_phase3_final_evaluation(cfg)
+%RUN_PHASE3_FINAL_EVALUATION
 %
 % Script for Phase 3: Final Model Training & Unbiased Evaluation.
 % 1. Trains the best pipeline from Phase 2 (MRMRLDA) on the entire training set.
@@ -8,11 +9,17 @@
 
 %% 0. Initialization
 % =========================================================================
-clear; clc; close all;
 fprintf('PHASE 3: Final Model Training & Unbiased Evaluation - %s\n', string(datetime('now')));
 
+if nargin < 1
+    cfg = struct();
+end
+if ~isfield(cfg, 'projectRoot')
+    cfg.projectRoot = pwd;
+end
+
 % --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
+projectRoot = cfg.projectRoot; % Assumes current working directory is project root unless overridden
 if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
     error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
            'main project root directory before running. Current directory is: %s'], projectRoot);
@@ -889,3 +896,4 @@ function fh_roc_det = plotRocAndDetCurves(trueLabels, scores, positiveClassIdent
     end
 end
 % --- END: Definition of plotRocAndDetCurves ---
+end
