@@ -23,26 +23,12 @@ if ~isfield(cfg, 'projectRoot')
 end
 
 % --- Define Paths ---
-projectRoot = cfg.projectRoot;
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
-
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-if ~contains(path, helperFunPath)
-    addpath(helperFunPath);
-end
-
-dataPath         = fullfile(projectRoot, 'data');
-phase2ModelsPath = fullfile(projectRoot, 'models', 'Phase2'); % For loading best hyperparameters
-resultsPath_P3   = fullfile(projectRoot, 'results', 'Phase3'); % General Phase 3 results
-modelsPath_P3    = fullfile(projectRoot, 'models', 'Phase3');   
-figuresPath_P3   = fullfile(projectRoot, 'figures', 'Phase3'); 
+P = setup_project_paths(cfg.projectRoot, 'Phase3');
+dataPath         = P.dataPath;
+phase2ModelsPath = fullfile(P.projectRoot, 'models', 'Phase2'); % For loading best hyperparameters
+resultsPath_P3   = P.resultsPath; % General Phase 3 results
+modelsPath_P3    = P.modelsPath;
+figuresPath_P3   = P.figuresPath;
 
 if ~exist(resultsPath_P3, 'dir'), mkdir(resultsPath_P3); end
 if ~exist(modelsPath_P3, 'dir'), mkdir(modelsPath_P3); end

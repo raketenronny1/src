@@ -19,25 +19,11 @@ if ~isfield(cfg, 'projectRoot')
 end
 
 % --- Define Paths (Simplified) ---
-projectRoot = cfg.projectRoot; % Assumes current working directory is project root unless overridden
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
-
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-if ~contains(path, helperFunPath)
-    addpath(helperFunPath);
-end
-
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase3'); % Specific to Phase 3
-modelsPath    = fullfile(projectRoot, 'models', 'Phase3');   % Specific to Phase 3
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase3'); % Specific to Phase 3
+P = setup_project_paths(cfg.projectRoot, 'Phase3');
+dataPath    = P.dataPath;
+resultsPath = P.resultsPath;
+modelsPath  = P.modelsPath;
+figuresPath = P.figuresPath;
 
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 if ~exist(modelsPath, 'dir'), mkdir(modelsPath); end
