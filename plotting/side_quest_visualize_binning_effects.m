@@ -20,7 +20,9 @@ helperFunPath = fullfile(srcPath, 'helper_functions');
 if ~exist(helperFunPath, 'dir')
     error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
 end
-addpath(helperFunPath); % For bin_spectra function
+if ~contains(path, helperFunPath)
+    addpath(helperFunPath); % For bin_spectra function
+end
 dataPath      = fullfile(projectRoot, 'data');
 figuresPath   = fullfile(projectRoot, 'figures', 'SideQuests'); % New folder for this plot
 if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end

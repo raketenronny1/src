@@ -32,7 +32,9 @@ dirPathsToEnsure = {P.resultsPath_OutlierExploration, P.resultsPath_OutlierAppli
 for i = 1:length(dirPathsToEnsure)
     if ~isfolder(dirPathsToEnsure{i}), mkdir(dirPathsToEnsure{i}); end
 end
-addpath(P.helperFunPath);
+if ~contains(path, P.helperFunPath)
+    addpath(P.helperFunPath);
+end
 
 % --- Parameters ---
 P.datePrefix = string(datetime('now','Format','yyyyMMdd'));

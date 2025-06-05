@@ -34,7 +34,9 @@ helperFunPath = fullfile(srcPath, 'helper_functions');
 if ~exist(helperFunPath, 'dir')
     error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
 end
-addpath(helperFunPath);
+if ~contains(path, helperFunPath)
+    addpath(helperFunPath);
+end
 
 dataPath         = fullfile(projectRoot, 'data');
 phase2ModelsPath = fullfile(projectRoot, 'models', 'Phase2'); % For loading best hyperparameters
