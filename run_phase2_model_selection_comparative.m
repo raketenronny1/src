@@ -30,8 +30,12 @@ end
 
 srcPath       = fullfile(projectRoot, 'src');
 helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir'), error('Helper functions directory not found: %s', helperFunPath); end
-addpath(helperFunPath);
+if ~exist(helperFunPath, 'dir')
+    error('Helper functions directory not found: %s', helperFunPath);
+end
+if ~contains(path, helperFunPath)
+    addpath(helperFunPath);
+end
 
 dataPath      = fullfile(projectRoot, 'data');
 resultsPath   = fullfile(projectRoot, 'results', 'Phase2'); 

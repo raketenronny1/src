@@ -25,7 +25,9 @@ helperFunPath = fullfile(srcPath, 'helper_functions');
 if ~exist(helperFunPath, 'dir')
     error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
 end
-addpath(helperFunPath);
+if ~contains(path, helperFunPath)
+    addpath(helperFunPath);
+end
 
 % ***** THIS IS THE CRUCIAL ADDITION/CORRECTION *****
 dataPath      = fullfile(projectRoot, 'data'); % Define dataPath

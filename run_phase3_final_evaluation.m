@@ -30,7 +30,9 @@ helperFunPath = fullfile(srcPath, 'helper_functions');
 if ~exist(helperFunPath, 'dir')
     error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
 end
-addpath(helperFunPath);
+if ~contains(path, helperFunPath)
+    addpath(helperFunPath);
+end
 
 dataPath      = fullfile(projectRoot, 'data');
 resultsPath   = fullfile(projectRoot, 'results', 'Phase3'); % Specific to Phase 3
