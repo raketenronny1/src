@@ -23,26 +23,14 @@ if ~isfield(cfg, 'outlierStrategiesToCompare')
 end
 
 % --- Define Paths ---
-projectRoot = cfg.projectRoot;
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error('Project structure not found. Run from project root. Current: %s', projectRoot);
-end
+P = setup_project_paths(cfg.projectRoot, 'Phase2');
+dataPath    = P.dataPath;
+resultsPath = P.resultsPath;
+modelsPath  = P.modelsPath;
+figuresPath = P.figuresPath;
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('Helper functions directory not found: %s', helperFunPath);
-end
-if ~contains(path, helperFunPath)
-    addpath(helperFunPath);
-end
-
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase2'); 
-modelsPath    = fullfile(projectRoot, 'models', 'Phase2');   
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase2'); 
-comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison'); % For new comparison plots
-comparisonResultsPath = fullfile(projectRoot, 'results', 'OutlierStrategyComparison'); % For new comparison tables/data
+comparisonFiguresPath = fullfile(P.projectRoot, 'figures', 'OutlierStrategyComparison'); % For new comparison plots
+comparisonResultsPath = fullfile(P.projectRoot, 'results', 'OutlierStrategyComparison'); % For new comparison tables/data
 
 dirToEnsure = {resultsPath, modelsPath, figuresPath, comparisonFiguresPath, comparisonResultsPath};
 for i=1:length(dirToEnsure), if ~isfolder(dirToEnsure{i}), mkdir(dirToEnsure{i}); end, end

@@ -16,24 +16,17 @@ clear; clc; close all;
 fprintf('COMPREHENSIVE OUTLIER PROCESSING (T2/Q OR & AND Strategies) - START %s\n', string(datetime('now')));
 
 % --- Define Paths ---
-projectRoot = pwd;
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error('Project structure not found. Run from project root. Current: %s', projectRoot);
-end
-
-P.dataPath = fullfile(projectRoot, 'data');
-P.resultsPath_OutlierExploration = fullfile(projectRoot, 'results', 'Phase1_OutlierExploration'); % For the main .mat analysis file
-P.resultsPath_OutlierApplication = fullfile(projectRoot, 'results'); % For cleaned tables, CSVs
-P.figuresPath_OutlierExploration = fullfile(projectRoot, 'figures', 'Phase1_OutlierExploration'); % For all plots
-P.helperFunPath = fullfile(projectRoot, 'src', 'helper_functions');
+Pbase = setup_project_paths(pwd);
+P.dataPath = Pbase.dataPath;
+P.resultsPath_OutlierExploration = fullfile(Pbase.projectRoot, 'results', 'Phase1_OutlierExploration'); % For the main .mat analysis file
+P.resultsPath_OutlierApplication = fullfile(Pbase.projectRoot, 'results'); % For cleaned tables, CSVs
+P.figuresPath_OutlierExploration = fullfile(Pbase.projectRoot, 'figures', 'Phase1_OutlierExploration'); % For all plots
+P.helperFunPath = Pbase.helperFunPath;
 
 % Create directories if they don't exist
 dirPathsToEnsure = {P.resultsPath_OutlierExploration, P.resultsPath_OutlierApplication, P.figuresPath_OutlierExploration};
 for i = 1:length(dirPathsToEnsure)
     if ~isfolder(dirPathsToEnsure{i}), mkdir(dirPathsToEnsure{i}); end
-end
-if ~contains(path, P.helperFunPath)
-    addpath(P.helperFunPath);
 end
 
 % --- Parameters ---
