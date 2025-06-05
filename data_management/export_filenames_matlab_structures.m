@@ -1,10 +1,24 @@
-files = dir('C:\Users\Franz\OneDrive\01_Promotion\01 Data\meningioma-ftir-classification\results\Phase3');
+%% export_filenames_matlab_structures.m
+%
+% Lists all files in the Phase3 results folder and prints the variables
+% contained in each MAT-file. The project root is determined using the
+% helper `get_project_root`, which defaults to the current working
+% directory or can be overridden with the PROJECT_ROOT environment
+% variable.
+%
+% Example:
+%   projectRoot = get_project_root();
+%   folderPath  = fullfile(projectRoot, 'results', 'Phase3');
+%
+projectRoot = get_project_root();
+folderPath  = fullfile(projectRoot, 'results', 'Phase3');
+
+files = dir(folderPath);
 files = files(~[files.isdir]);
 for i = 1:length(files)
     disp(files(i).name);
 end
-%%
-folderPath = 'C:\Users\Franz\OneDrive\01_Promotion\01 Data\meningioma-ftir-classification\results\Phase3';  % change as needed
+%% Inspect variables inside MAT-files
 files = dir(fullfile(folderPath, '*.mat'));
 
 for i = 1:length(files)
