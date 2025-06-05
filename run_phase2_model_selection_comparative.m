@@ -13,22 +13,16 @@ fprintf('PHASE 2: Model Selection & Outlier Strategy Comparison - %s\n', string(
 clear; clc; close all;
 
 % --- Define Paths ---
-projectRoot = pwd; 
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error('Project structure not found. Run from project root. Current: %s', projectRoot);
-end
+P = setup_project_paths();
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir'), error('Helper functions directory not found: %s', helperFunPath); end
-addpath(helperFunPath);
+addpath(P.helperFunPath);
 
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase2'); 
-modelsPath    = fullfile(projectRoot, 'models', 'Phase2');   
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase2'); 
-comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison'); % For new comparison plots
-comparisonResultsPath = fullfile(projectRoot, 'results', 'OutlierStrategyComparison'); % For new comparison tables/data
+dataPath    = P.dataPath;
+resultsPath = fullfile(P.resultsPath, 'Phase2');
+modelsPath  = fullfile(P.modelsPath, 'Phase2');
+figuresPath = fullfile(P.figuresPath, 'Phase2');
+comparisonFiguresPath = fullfile(P.figuresPath, 'OutlierStrategyComparison'); % For new comparison plots
+comparisonResultsPath = fullfile(P.resultsPath, 'OutlierStrategyComparison');   % For new comparison tables/data
 
 dirToEnsure = {resultsPath, modelsPath, figuresPath, comparisonFiguresPath, comparisonResultsPath};
 for i=1:length(dirToEnsure), if ~isfolder(dirToEnsure{i}), mkdir(dirToEnsure{i}); end, end

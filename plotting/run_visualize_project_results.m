@@ -10,28 +10,28 @@ fprintf('GENERATING PROJECT VISUALIZATIONS (Phases 2-4) - %s\n', string(datetime
 clear; clc; close all;
 
 % --- Define Paths ---
-currentScriptPath = fileparts(mfilename('fullpath')); 
-projectRoot = fileparts(fileparts(currentScriptPath)); 
-fprintf('INFO: Project root assumed to be: %s\n', projectRoot);
+P = setup_project_paths();
 
-resultsPath_main = fullfile(projectRoot, 'results');
-comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison'); 
+addpath(P.helperFunPath);
+
+resultsPath_main = P.resultsPath;
+comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison');
 
 resultsPath_P3 = fullfile(resultsPath_main, 'Phase3');
 resultsPath_P4 = fullfile(resultsPath_main, 'Phase4');
-modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
+modelsPath_P3 = fullfile(P.modelsPath, 'Phase3');
 
-figuresPath_output = fullfile(projectRoot, 'figures', 'ProjectSummaryFigures'); 
+figuresPath_output = fullfile(P.figuresPath, 'ProjectSummaryFigures');
 if ~isfolder(figuresPath_output), mkdir(figuresPath_output); end
 
-comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison_Plots_From_VisualizeScript');
+comparisonFiguresPath = fullfile(P.figuresPath, 'OutlierStrategyComparison_Plots_From_VisualizeScript');
 if ~isfolder(comparisonFiguresPath), mkdir(comparisonFiguresPath); end
 
 dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
-plottingHelpersPath = fullfile(projectRoot, 'plotting'); 
+plottingHelpersPath = fullfile(P.projectRoot, 'plotting');
 if exist(plottingHelpersPath, 'dir')
-    addpath(plottingHelpersPath); 
+    addpath(plottingHelpersPath);
     fprintf('Added to path: %s\n', plottingHelpersPath);
 else
     warning('Plotting helpers path not found: %s. Ensure spider_plot_R2019b.m is on the MATLAB path or in this directory.', plottingHelpersPath);

@@ -11,24 +11,15 @@
 clear; clc; close all;
 fprintf('PHASE 3: Final Model Training & Unbiased Evaluation - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
+% --- Define Paths ---
+P = setup_project_paths();
 
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-addpath(helperFunPath);
+addpath(P.helperFunPath);
 
-dataPath      = fullfile(projectRoot, 'data');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase3'); % Specific to Phase 3
-modelsPath    = fullfile(projectRoot, 'models', 'Phase3');   % Specific to Phase 3
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase3'); % Specific to Phase 3
+dataPath    = P.dataPath;
+resultsPath = fullfile(P.resultsPath, 'Phase3');
+modelsPath  = fullfile(P.modelsPath, 'Phase3');
+figuresPath = fullfile(P.figuresPath, 'Phase3');
 
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 if ~exist(modelsPath, 'dir'), mkdir(modelsPath); end

@@ -9,20 +9,12 @@
 clear; clc; close all;
 fprintf('Visualizing Binning Effects - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
-srcPath       = fullfile(projectRoot, 'src');
-helperFunPath = fullfile(srcPath, 'helper_functions');
-if ~exist(helperFunPath, 'dir')
-    error('The ''helper_functions'' directory was not found inside ''%s''.', srcPath);
-end
-addpath(helperFunPath); % For bin_spectra function
-dataPath      = fullfile(projectRoot, 'data');
-figuresPath   = fullfile(projectRoot, 'figures', 'SideQuests'); % New folder for this plot
+% --- Define Paths ---
+P = setup_project_paths();
+
+dataPath    = P.dataPath;
+figuresPath = fullfile(P.figuresPath, 'SideQuests'); % New folder for this plot
+addpath(P.helperFunPath); % For bin_spectra function
 if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 

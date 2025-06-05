@@ -11,17 +11,15 @@
 clear; clc; close all;
 fprintf('PHASE 4: Feature Interpretation - %s\n', string(datetime('now')));
 
-% --- Define Paths (Simplified) ---
-projectRoot = pwd; % Assumes current working directory IS the project root.
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory before running. Current directory is: %s'], projectRoot);
-end
+% --- Define Paths ---
+P = setup_project_paths();
 
-dataPath      = fullfile(projectRoot, 'data');
-modelsPath    = fullfile(projectRoot, 'models', 'Phase3');
-resultsPath   = fullfile(projectRoot, 'results', 'Phase4'); % Specific to Phase 4
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase4'); % Specific to Phase 4
+addpath(P.helperFunPath);
+
+dataPath    = P.dataPath;
+modelsPath  = fullfile(P.modelsPath, 'Phase3');
+resultsPath = fullfile(P.resultsPath, 'Phase4'); % Specific to Phase 4
+figuresPath = fullfile(P.figuresPath, 'Phase4'); % Specific to Phase 4
 
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
