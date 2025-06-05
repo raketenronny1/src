@@ -205,7 +205,7 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                     if numFeat <=0 || size(X_train_p,2) == 0 
                         % fprintf('DEBUG MRMR (perform_inner_cv): numFeat is %d or no features in X. Using all available features for this inner fold.\n', numFeat);
                         selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
-                    elif ~(size(X_train_p,1)>1 && length(unique(y_train_fold))==2 && exist('fscmrmr','file'))
+                    elseif ~(size(X_train_p,1)>1 && length(unique(y_train_fold))==2 && exist('fscmrmr','file'))
                         % Conditions for fscmrmr not met (e.g. not enough samples, or only one class)
                         selectedFcIdx_in_current_w = 1:size(X_train_p,2); % Fallback to all
                     else
