@@ -143,13 +143,13 @@ bestHyperparamFilePattern_OR = fullfile(phase2ModelsPath, sprintf('*_Phase2_Best
 bestHyperparamFiles_OR = dir(bestHyperparamFilePattern_OR);
 
 
-% MRMR is performed on unbinned data for the final model. Fix binning factor to 1.
-final_binningFactor = 1; % Default
-final_numMRMRFeatures = 50; % Default
+% Default hyperparameters if Phase 2 results are unavailable
+final_binningFactor = 1; % Adjust if Phase 2 recommended a different factor
+final_mrmrFeaturePercent = 0.1; % Select 10%% of features
 
 if isempty(bestHyperparamFiles_OR)
-    warning('No Phase 2 best hyperparameter file found in %s for MRMRLDA and strategy OR using pattern "%s". Using predefined defaults (Binning: %d, MRMR Feats: %d).', ...
-        phase2ModelsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_OR.mat', final_binningFactor, final_numMRMRFeatures));
+    warning('No Phase 2 best hyperparameter file found in %s for MRMRLDA and strategy OR using pattern "%s". Using predefined defaults (Binning: %d, MRMR Percent: %.2f).', ...
+        phase2ModelsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_OR.mat', final_binningFactor, final_mrmrFeaturePercent));
 else
     [~,idxSortHP_OR] = sort([bestHyperparamFiles_OR.datenum],'descend');
     latestBestHPFile_OR = fullfile(phase2ModelsPath, bestHyperparamFiles_OR(idxSortHP_OR(1)).name);
@@ -167,8 +167,8 @@ else
                         if isfield(bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}, 'binningFactor')
                             all_binning_factors_p2_OR = [all_binning_factors_p2_OR; bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}.binningFactor];
                         end
-                        if isfield(bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}, 'numMRMRFeatures')
-                            all_mrmr_features_p2_OR = [all_mrmr_features_p2_OR; bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}.numMRMRFeatures];
+                        if isfield(bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}, 'mrmrFeaturePercent')
+                            all_mrmr_features_p2_OR = [all_mrmr_features_p2_OR; bestPipelineSummary_OR.outerFoldBestHyperparams{k_hp}.mrmrFeaturePercent];
                         end
                     end
                 end
@@ -178,19 +178,19 @@ else
                 warning('No binning factors found in loaded bestPipelineSummary_strat for MRMRLDA (OR strategy). Using fixed default %d.', final_binningFactor);
             end
             if ~isempty(all_mrmr_features_p2_OR)
-                final_numMRMRFeatures = mode(all_mrmr_features_p2_OR);
+                final_mrmrFeaturePercent = mode(all_mrmr_features_p2_OR);
             else
-                warning('No numMRMRFeatures found in loaded bestPipelineSummary_strat for MRMRLDA (OR strategy). Using predefined default %d.', final_numMRMRFeatures);
+                warning('No mrmrFeaturePercent found in loaded bestPipelineSummary_strat for MRMRLDA (OR strategy). Using predefined default %.2f.', final_mrmrFeaturePercent);
             end
-            fprintf('Using hyperparameters for MRMRLDA (OR Strategy) from Phase 2: Binning=%d, MRMR Feats=%d\n', ...
-                     final_binningFactor, final_numMRMRFeatures);
+            fprintf('Using hyperparameters for MRMRLDA (OR Strategy) from Phase 2: Binning=%d, MRMR Percent=%.2f\n', ...
+                     final_binningFactor, final_mrmrFeaturePercent);
         else
-            warning('The best pipeline found in Phase 2 for OR strategy was %s, not MRMRLDA. Using predefined defaults for MRMRLDA (Binning: %d, MRMR Feats: %d).', ...
-                    bestPipelineSummary_OR.pipelineConfig.name, final_binningFactor, final_numMRMRFeatures);
+            warning('The best pipeline found in Phase 2 for OR strategy was %s, not MRMRLDA. Using predefined defaults for MRMRLDA (Binning: %d, MRMR Percent: %.2f).', ...
+                    bestPipelineSummary_OR.pipelineConfig.name, final_binningFactor, final_mrmrFeaturePercent);
         end
     catch ME_loadHP_OR
-        fprintf('ERROR loading/processing best hyperparameters for OR strategy from %s: %s. Using predefined defaults (Binning: %d, MRMR Feats: %d).\n', ...
-            latestBestHPFile_OR, ME_loadHP_OR.message, final_binningFactor, final_numMRMRFeatures);
+        fprintf('ERROR loading/processing best hyperparameters for OR strategy from %s: %s. Using predefined defaults (Binning: %d, MRMR Percent: %.2f).\n', ...
+            latestBestHPFile_OR, ME_loadHP_OR.message, final_binningFactor, final_mrmrFeaturePercent);
     end
 end
 
@@ -220,6 +220,7 @@ final_selected_feature_indices_in_binned_space = [];
 final_selected_wavenumbers = [];
 X_train_fs = X_train_binned; % Default if no MRMR features or selection fails
 
+final_numMRMRFeatures = ceil(final_mrmrFeaturePercent * size(X_train_binned,2));
 if final_numMRMRFeatures > 0 && size(X_train_binned, 2) > 0 && final_numMRMRFeatures <= size(X_train_binned,2)
     try
         [ranked_indices_all_train, ~] = fscmrmr(X_train_binned, y_train_cat);
@@ -352,6 +353,7 @@ finalModelPackage_OR.trainingDate = string(datetime('now'));
 finalModelPackage_OR.LDAModel = final_LDAModel; % The model trained with OR data
 finalModelPackage_OR.binningFactor = final_binningFactor;
 finalModelPackage_OR.numMRMRFeaturesSelected = length(final_selected_feature_indices_in_binned_space);
+finalModelPackage_OR.mrmrFeaturePercent = final_mrmrFeaturePercent;
 finalModelPackage_OR.selectedFeatureIndices_in_binned_space = final_selected_feature_indices_in_binned_space;
 finalModelPackage_OR.selectedWavenumbers = final_selected_wavenumbers;
 finalModelPackage_OR.originalWavenumbers_before_binning = wavenumbers_original;
@@ -370,7 +372,7 @@ fprintf('\nFinal model package for OR strategy saved to: %s\n', modelFilename_OR
 
 resultsFilename_phase3_OR = fullfile(resultsPath_P3, sprintf('%s_Phase3_TestSetResults_Strat_OR.mat', dateStr));
 save(resultsFilename_phase3_OR, 'testSetPerformanceMetrics_spectrum', 'probeLevelResults', 'probeLevelPerfMetrics', ...
-     'final_binningFactor', 'final_numMRMRFeatures', 'final_selected_wavenumbers');
+     'final_binningFactor', 'final_numMRMRFeatures', 'final_mrmrFeaturePercent', 'final_selected_wavenumbers');
 fprintf('Phase 3 test set results for OR strategy saved to: %s\n', resultsFilename_phase3_OR);
 
 %% 6. Visualizations (OR Strategy)

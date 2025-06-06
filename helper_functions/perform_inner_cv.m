@@ -17,9 +17,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
     switch lower(pipelineConfig.feature_selection_method)
         case 'fisher'
-            if ismember('numFisherFeatures', pipelineConfig.hyperparameters_to_tune)
-                paramGridCells{end+1} = pipelineConfig.numFisherFeatures_range(:)'; 
-                paramNames{end+1} = 'numFisherFeatures';
+            if ismember('fisherFeaturePercent', pipelineConfig.hyperparameters_to_tune)
+                paramGridCells{end+1} = pipelineConfig.fisherFeaturePercent_range(:)';
+                paramNames{end+1} = 'fisherFeaturePercent';
             end
         case 'pca'
             if ismember('pcaVarianceToExplain', pipelineConfig.hyperparameters_to_tune)
@@ -30,9 +30,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                  paramNames{end+1} = 'numPCAComponents';
             end
         case 'mrmr'
-            if ismember('numMRMRFeatures', pipelineConfig.hyperparameters_to_tune)
-                paramGridCells{end+1} = pipelineConfig.numMRMRFeatures_range(:)'; 
-                paramNames{end+1} = 'numMRMRFeatures';
+            if ismember('mrmrFeaturePercent', pipelineConfig.hyperparameters_to_tune)
+                paramGridCells{end+1} = pipelineConfig.mrmrFeaturePercent_range(:)';
+                paramNames{end+1} = 'mrmrFeaturePercent';
             end
     end
     
@@ -167,7 +167,8 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             switch lower(pipelineConfig.feature_selection_method)
                 case 'fisher'
-                    numFeat = min(currentHyperparams.numFisherFeatures, size(X_train_p,2));
+                    numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
+                    numFeat = min(numFeat, size(X_train_p,2));
                     if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2
                         fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold);
                         [~, sorted_idx_inner] = sort(fisherRatios_inner, 'descend', 'MissingPlacement','last');
@@ -196,7 +197,8 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                         end
                     end
                 case 'mrmr'
-                    numFeat = min(currentHyperparams.numMRMRFeatures, size(X_train_p,2));
+                    numFeat = ceil(currentHyperparams.mrmrFeaturePercent * size(X_train_p,2));
+                    numFeat = min(numFeat, size(X_train_p,2));
                     % --- Keep your DEBUG fprintf lines if desired ---
                     % fprintf('DEBUG MRMR (perform_inner_cv): size(X_train_p) = [%d, %d], class = %s\n', size(X_train_p,1), size(X_train_p,2), class(X_train_p));
                     % fprintf('DEBUG MRMR (perform_inner_cv): size(y_train_fold_cat) = [%d, %d], class = %s\n', size(y_train_fold_cat,1), size(y_train_fold_cat,2), class(y_train_fold_cat));

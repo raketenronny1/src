@@ -45,6 +45,7 @@ Optional scripts such as `run_outlier_detection_pca2.m` or `run_apply_consensus_
 ### Phase 2 – Model and feature selection
 
 Run nested cross-validation and compare outlier strategies using:
+The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
 
 ```matlab
 run('src/run_phase2_model_selection_comparative.m')
@@ -55,6 +56,7 @@ Results are saved under `results/Phase2` and models under `models/Phase2`.
 ### Phase 3 – Final evaluation
 
 Train the MRMR–LDA pipeline on the full training set and evaluate on the test set.
+MRMR features are chosen based on a percentage of the binned spectrum rather than a fixed count.
 
 ```matlab
 run('src/run_phase3_final_evaluation.m')

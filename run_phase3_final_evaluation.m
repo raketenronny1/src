@@ -114,12 +114,10 @@ end
 
 % --- Define Final Model Hyperparameters (MRMRLDA) ---
 % Based on Phase 2 results (mode of outerFoldBestHyperparams for MRMRLDA)
-% Binning is not applied for MRMRLDA. Keep factor fixed at 1 to ensure
-% MRMR runs on the original (unbinned) spectra.
-final_binningFactor = 1;
-final_numMRMRFeatures = 50;
-fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, Num MRMR Features = %d\n', ...
-    final_binningFactor, final_numMRMRFeatures);
+final_binningFactor = 1; % Adjust if Phase 2 recommended a different factor
+final_mrmrFeaturePercent = 0.1; % Select 10%% of available features
+fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, MRMR Percent = %.2f\n', ...
+    final_binningFactor, final_mrmrFeaturePercent);
 
 % --- Define Metric Names (needed for calculate_performance_metrics) ---
 metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'};
@@ -139,6 +137,7 @@ end
 fprintf('Training data after binning: %d spectra, %d features.\n', size(X_train_binned,1), size(X_train_binned,2));
 
 % --- 2.2. Apply MRMR Feature Selection to Full Binned Training Set ---
+final_numMRMRFeatures = ceil(final_mrmrFeaturePercent * size(X_train_binned,2));
 fprintf('Applying MRMR (Target Features: %d) to full binned training set...\n', final_numMRMRFeatures);
 y_train_cat = categorical(y_train_full); % fscmrmr needs categorical Y
 
@@ -268,6 +267,7 @@ finalModelPackage.trainingDate = string(datetime('now'));
 finalModelPackage.LDAModel = final_LDA_model;
 finalModelPackage.binningFactor = final_binningFactor;
 finalModelPackage.numMRMRFeaturesSelected = length(final_selected_feature_indices_in_binned_space);
+finalModelPackage.mrmrFeaturePercent = final_mrmrFeaturePercent;
 finalModelPackage.selectedFeatureIndices_in_binned_space = final_selected_feature_indices_in_binned_space;
 finalModelPackage.selectedWavenumbers = final_selected_wavenumbers;
 finalModelPackage.originalWavenumbers_before_binning = wavenumbers_original;
@@ -281,7 +281,7 @@ save(modelFilename, 'finalModelPackage');
 fprintf('\nFinal model package saved to: %s\n', modelFilename);
 
 resultsFilename_phase3 = fullfile(resultsPath, sprintf('%s_Phase3_TestSetResults.mat', dateStr));
-save(resultsFilename_phase3, 'testSetPerformanceMetrics', 'final_binningFactor', 'final_numMRMRFeatures', 'final_selected_wavenumbers');
+save(resultsFilename_phase3, 'testSetPerformanceMetrics', 'final_binningFactor', 'final_numMRMRFeatures', 'final_mrmrFeaturePercent', 'final_selected_wavenumbers');
 fprintf('Phase 3 test set results saved to: %s\n', resultsFilename_phase3);
 
 %% 5. Further Analysis / Plotting (Placeholder)
