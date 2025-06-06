@@ -55,15 +55,19 @@ Results are saved under `results/Phase2` and models under `models/Phase2`.
 ### Phase 3 – Final evaluation
 
 Train the MRMR–LDA pipeline on the full training set and evaluate on the test set.
+The helper script `run_phase3_final_evaluation_from_phase2.m` automatically
+loads the best pipeline configuration saved during Phase&nbsp;2 and applies the
+corresponding outlier strategy.
 
 ```matlab
-run('src/run_phase3_final_evaluation.m')
+run('src/run_phase3_final_evaluation_from_phase2.m')
 ```
 
-For the alternative "T2 OR Q" outlier strategy execute:
+Legacy scripts remain for explicitly running the two predefined strategies:
 
 ```matlab
-run('src/run_phase3_final_evaluation_OR_strategy.m')
+run('src/run_phase3_final_evaluation.m')            % AND strategy
+run('src/run_phase3_final_evaluation_OR_strategy.m') % OR strategy
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
