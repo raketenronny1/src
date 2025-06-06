@@ -89,6 +89,41 @@ run('src/run_phase4_feature_interpretation.m')
 
 Outputs appear in `results/Phase4` and `figures/Phase4`.
 
+### Visualizing project results
+
+After completing Phases 2–4 you can summarise the pipeline outputs with
+`plotting/run_visualize_project_results.m`. Running this script generates
+publication-ready plots under `figures/ProjectSummaryFigures` and creates bar
+charts comparing the consensus and OR outlier strategies in
+`figures/OutlierStrategyComparison_Plots_From_VisualizeScript`.
+
+Other scripts that produce figures are:
+
+- `generate_phase1_figures.m` – requires `data/wavenumbers.mat` and
+  `data/data_table_complete.mat` and writes Phase 1 plots to
+  `figures/Phase1_Dissertation_Plots`.
+- `plotting/side_quest_visualize_binning_effects.m` – visualises the effect of
+  different binning factors using
+  `data/training_set_no_outliers_T2Q.mat` and outputs to `figures/SideQuests`.
+- `generate_exploratory_outlier_visualizations.m` – a function called from
+  `import_preprocessing/run_comprehensive_outlier_processing.m`.  It expects the
+  spectra, labels, PCA results and a struct containing a
+  `figuresPath_OutlierExploration` field and produces several exploratory plots
+  in that directory.
+
+Example usage:
+
+```matlab
+% Create summary plots after Phase 4
+run('src/plotting/run_visualize_project_results.m')
+
+% Phase 1 figures
+run('src/generate_phase1_figures.m')
+
+% Binning effect visualisation
+run('src/plotting/side_quest_visualize_binning_effects.m')
+```
+
 ## Refactored helper functions
 
 Reusable helper functions in `helper_functions/` include:
