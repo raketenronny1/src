@@ -27,6 +27,17 @@ figures/         % generated plots
 - **Statistics and Machine Learning Toolbox** (for LDA, cross-validation and `fscmrmr`)
 - **Signal Processing Toolbox** (for spectral smoothing via Savitzky–Golay filtering)
 
+## Configuration helper
+
+Use the `configure_cfg.m` function to create or update the `cfg` structure that
+controls the main scripts. It fills in sensible defaults for missing fields and
+accepts name/value pairs for overrides.
+
+```matlab
+cfg = configure_cfg('outlierStrategy','OR');
+run_phase3_final_evaluation(cfg);
+```
+
 ## Analysis pipeline
 
 All scripts assume the MATLAB current folder is set to the project root. Each phase can be run independently once the required input files are available.
