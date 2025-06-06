@@ -149,9 +149,15 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         p.binningFactors = [1, 2, 4, 8, 16]; p.pcaVarianceToExplain_range = [0.90, 0.95, 0.99];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 4: MRMR + LDA ---
-        p = struct(); p.name = 'MRMRLDA'; p.feature_selection_method = 'mrmr'; p.classifier = 'LDA';
-        p.hyperparameters_to_tune = {'binningFactor', 'numMRMRFeatures'};
-        p.binningFactors = [1, 2, 4, 8, 16]; p.numMRMRFeatures_range = [10, 20, 30, 40, 50];
+        % MRMR is performed on unbinned data. BinningFactor is fixed to 1 and
+        % not part of the hyperparameter search.
+        p = struct();
+        p.name = 'MRMRLDA';
+        p.feature_selection_method = 'mrmr';
+        p.classifier = 'LDA';
+        p.hyperparameters_to_tune = {'numMRMRFeatures'}; % only tune number of features
+        p.binningFactors = 1; % no binning applied for MRMR pipeline
+        p.numMRMRFeatures_range = [10, 20, 30, 40, 50];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         
         overallComparisonResults.pipelines = pipelines; % Store pipeline definitions once

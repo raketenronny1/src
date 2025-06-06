@@ -114,13 +114,15 @@ end
 
 % --- Define Final Model Hyperparameters (MRMRLDA) ---
 % Based on Phase 2 results (mode of outerFoldBestHyperparams for MRMRLDA)
-final_binningFactor = 8;
+% Binning is not applied for MRMRLDA. Keep factor fixed at 1 to ensure
+% MRMR runs on the original (unbinned) spectra.
+final_binningFactor = 1;
 final_numMRMRFeatures = 50;
 fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, Num MRMR Features = %d\n', ...
     final_binningFactor, final_numMRMRFeatures);
 
 % --- Define Metric Names (needed for calculate_performance_metrics) ---
-metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'}; % <<<< ADD THIS LINE
+metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'};
 %% 2. Train Final Model on Entire Training Set (MRMRLDA)
 % =========================================================================
 fprintf('\n--- Training Final MRMRLDA Model on Entire Training Set ---\n');
@@ -132,6 +134,7 @@ if final_binningFactor > 1
 else
     X_train_binned = X_train_full;
     wavenumbers_binned = wavenumbers_original;
+    fprintf('No binning applied. Using original training features.\n');
 end
 fprintf('Training data after binning: %d spectra, %d features.\n', size(X_train_binned,1), size(X_train_binned,2));
 
@@ -203,6 +206,7 @@ if final_binningFactor > 1
     [X_test_binned, ~] = bin_spectra(X_test_full, wavenumbers_original, final_binningFactor);
 else
     X_test_binned = X_test_full;
+    fprintf('No binning applied to test set. Using original features.\n');
 end
 fprintf('Test data after binning: %d spectra, %d features.\n', size(X_test_binned,1), size(X_test_binned,2));
 

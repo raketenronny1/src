@@ -142,7 +142,9 @@ fprintf('Loading best hyperparameters for MRMRLDA (Strategy: OR) from Phase 2 mo
 bestHyperparamFilePattern_OR = fullfile(phase2ModelsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_OR.mat'));
 bestHyperparamFiles_OR = dir(bestHyperparamFilePattern_OR);
 
-final_binningFactor = 1; % Default and fixed at 1 for OR strategy
+
+% MRMR is performed on unbinned data for the final model. Fix binning factor to 1.
+final_binningFactor = 1; % Default
 final_numMRMRFeatures = 50; % Default
 
 if isempty(bestHyperparamFiles_OR)
@@ -208,6 +210,7 @@ if final_binningFactor > 1
 else
     X_train_binned = X_train_full;
     wavenumbers_binned = wavenumbers_original;
+    fprintf('No binning applied. Using original training features.\n');
 end
 fprintf('Training data for OR strategy after binning: %d spectra, %d features.\n', size(X_train_binned,1), size(X_train_binned,2));
 
@@ -259,6 +262,7 @@ if final_binningFactor > 1
     [X_test_binned, ~] = bin_spectra(X_test_full, wavenumbers_original, final_binningFactor);
 else
     X_test_binned = X_test_full;
+    fprintf('No binning applied to test set. Using original features.\n');
 end
 fprintf('Test data after binning: %d spectra, %d features.\n', size(X_test_binned,1), size(X_test_binned,2));
 
