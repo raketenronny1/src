@@ -199,12 +199,13 @@ disp('Detailed 4x2 comparison figure created.');
 
 % Save the detailed comparison figure
 figure_filename_base_detail_final = sprintf('comparison_all_spectra_pos%d_vs_pos%d_4stages', vis_detail_pos_idx_1, vis_detail_pos_idx_2);
-fig_filename_detail_fig_final = [figure_filename_base_detail_final, '.fig'];
-savefig(fig_handle_detail_comp, fig_filename_detail_fig_final);
-fprintf('Detailed comparison figure saved as: %s\n', fig_filename_detail_fig_final);
-fig_filename_detail_tif_final = [figure_filename_base_detail_final, '.tif'];
-print(fig_handle_detail_comp, fig_filename_detail_tif_final, '-dtiff', '-r300');
-fprintf('Detailed comparison figure saved as: %s\n', fig_filename_detail_tif_final);
+fig_filename_detail_fig = [figure_filename_base_detail_final, '.fig'];
+savefig(fig_handle_detail_comp, fig_filename_detail_fig);
+fprintf('Detailed comparison figure (.fig) saved as: %s\n', fig_filename_detail_fig);
+
+fig_filename_detail_tif = [figure_filename_base_detail_final, '.tif'];
+print(fig_handle_detail_comp, fig_filename_detail_tif, '-dtiff', '-r300');
+fprintf('Detailed comparison figure (.tif) saved as: %s\n', fig_filename_detail_tif);
 
 
 fprintf('\n--- Full Workflow Script Complete ---\n');
