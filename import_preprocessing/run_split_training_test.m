@@ -1,5 +1,5 @@
 % ======================================================================
-% Script: splitDatasetFTIR.m
+% Script: run_split_training_test.m
 % ======================================================================
 %   Outputs to .\results\
 %     • YYYYMMDD_DatasetSplit_FullLog.txt      (full console log, via diary)
@@ -210,15 +210,11 @@ else
 end
 % --- End of Patient Overlap Check ---
 
-% This is your existing line 133 (or around there):
 summaryRows = [summaryRows; addRow('SplitLogic','PatientOverlap','Overall','Status',patientOverlapStatus,'')];
-
-% This is your existing conditional block that uses dupPtsStr:
 if strcmp(patientOverlapStatus,'Yes') && exist('dupPtsStr','var') && ~isempty(dupPtsStr) && ~startsWith(dupPtsStr, '[Error') && ~startsWith(dupPtsStr, '[Overlapping IDs found, but')
     summaryRows = [summaryRows;
                    addRow('SplitLogic','PatientOverlap','Overall','OverlappingIDs',dupPtsStr,'')];
 end
-% -----------------------------------------------------------------------
 
 % — detailed demographic rows —
 summaryRows = [summaryRows;
