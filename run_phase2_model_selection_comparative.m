@@ -506,10 +506,17 @@ function aggHyper = aggregate_best_hyperparams(hyperparamCell)
     if isempty(hyperparamCell)
         return;
     end
-    allFields = unique(cellfun(@fieldnames, hyperparamCell, 'UniformOutput', false));
-    if iscell(allFields)
-        allFields = unique([allFields{:}]);
+
+    % Filter to only non-empty struct entries to avoid errors with fieldnames
+    isValidStruct = cellfun(@(c) isstruct(c) && ~isempty(c), hyperparamCell);
+    hyperparamCell = hyperparamCell(isValidStruct);
+    if isempty(hyperparamCell)
+        return;
     end
+
+    allFieldsNested = cellfun(@fieldnames, hyperparamCell, 'UniformOutput', false);
+    allFields = unique([allFieldsNested{:}]);
+
     for f = 1:numel(allFields)
         fname = allFields{f};
         values = []; %#ok<AGROW>
