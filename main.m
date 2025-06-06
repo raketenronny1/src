@@ -18,6 +18,9 @@ else
     cfg.outlierStrategy = 'OR';
 end
 
+% Ensure Phase 2 compares only the selected strategy
+cfg.outlierStrategiesToCompare = {cfg.outlierStrategy};
+
 run_phase2_model_selection_comparative(cfg);
 run_phase3_final_evaluation(cfg);
 run_phase4_feature_interpretation(cfg);
