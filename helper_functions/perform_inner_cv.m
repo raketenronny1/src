@@ -20,6 +20,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             if ismember('fisherFeaturePercent', pipelineConfig.hyperparameters_to_tune)
                 paramGridCells{end+1} = pipelineConfig.fisherFeaturePercent_range(:)';
                 paramNames{end+1} = 'fisherFeaturePercent';
+            elseif ismember('numFisherFeatures', pipelineConfig.hyperparameters_to_tune)
+                paramGridCells{end+1} = pipelineConfig.numFisherFeatures_range(:)';
+                paramNames{end+1} = 'numFisherFeatures';
             end
         case 'pca'
             if ismember('pcaVarianceToExplain', pipelineConfig.hyperparameters_to_tune)
@@ -167,6 +170,13 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             switch lower(pipelineConfig.feature_selection_method)
                 case 'fisher'
+                    % Allow legacy "numFisherFeatures" field by converting it to a percent
+                    if isfield(currentHyperparams, 'numFisherFeatures')
+                        warning('perform_inner_cv:DeprecatedField', ...
+                            ['numFisherFeatures is deprecated. Use fisherFeaturePercent instead. ', ...
+                             'Automatically converting for this run.']);
+                        currentHyperparams.fisherFeaturePercent = currentHyperparams.numFisherFeatures ./ size(X_train_p,2);
+                    end
                     numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
                     numFeat = min(numFeat, size(X_train_p,2));
                     if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2

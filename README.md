@@ -58,6 +58,8 @@ Optional scripts such as `run_outlier_detection_pca2.m` or `run_apply_consensus_
 
 Run nested cross-validation and compare outlier strategies using:
 The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
+If you still use the legacy `numFisherFeatures` option it will be converted
+internally and a warning will be displayed.
 
 ```matlab
 run('src/run_phase2_model_selection_comparative.m')
