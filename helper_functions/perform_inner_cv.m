@@ -167,7 +167,16 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             switch lower(pipelineConfig.feature_selection_method)
                 case 'fisher'
-                    numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
+                    if isfield(currentHyperparams, 'fisherFeaturePercent')
+                        numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
+                    elseif isfield(currentHyperparams, 'numFisherFeatures')
+                        warning('perform_inner_cv:deprecatedField', ...
+                            ['numFisherFeatures is deprecated. Please update the pipeline to use ', ...
+                             'fisherFeaturePercent instead.']);
+                        numFeat = currentHyperparams.numFisherFeatures;
+                    else
+                        numFeat = size(X_train_p,2);
+                    end
                     numFeat = min(numFeat, size(X_train_p,2));
                     if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2
                         fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold);
