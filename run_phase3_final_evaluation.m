@@ -122,7 +122,7 @@ fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, Num MRMR Featur
     final_binningFactor, final_numMRMRFeatures);
 
 % --- Define Metric Names (needed for calculate_performance_metrics) ---
-metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'}; % <<<< ADD THIS LINE
+metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'};
 %% 2. Train Final Model on Entire Training Set (MRMRLDA)
 % =========================================================================
 fprintf('\n--- Training Final MRMRLDA Model on Entire Training Set ---\n');
