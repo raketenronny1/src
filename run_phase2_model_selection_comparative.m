@@ -140,8 +140,9 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 2: Fisher Ratio + LDA ---
         p = struct(); p.name = 'FisherLDA'; p.feature_selection_method = 'fisher'; p.classifier = 'LDA';
-        p.hyperparameters_to_tune = {'binningFactor', 'numFisherFeatures'};
-        p.binningFactors = [1, 2, 4, 8, 16]; p.numFisherFeatures_range = [10, 20, 30, 40, 50, 75, 100];
+        p.hyperparameters_to_tune = {'binningFactor', 'fisherFeaturePercent'};
+        p.binningFactors = [1, 2, 4, 8, 16];
+        p.fisherFeaturePercent_range = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 3: PCA + LDA ---
         p = struct(); p.name = 'PCALDA'; p.feature_selection_method = 'pca'; p.classifier = 'LDA';
@@ -149,15 +150,13 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         p.binningFactors = [1, 2, 4, 8, 16]; p.pcaVarianceToExplain_range = [0.90, 0.95, 0.99];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 4: MRMR + LDA ---
-        % MRMR is performed on unbinned data. BinningFactor is fixed to 1 and
-        % not part of the hyperparameter search.
         p = struct();
         p.name = 'MRMRLDA';
         p.feature_selection_method = 'mrmr';
         p.classifier = 'LDA';
-        p.hyperparameters_to_tune = {'numMRMRFeatures'}; % only tune number of features
-        p.binningFactors = 1; % no binning applied for MRMR pipeline
-        p.numMRMRFeatures_range = [10, 20, 30, 40, 50];
+        p.hyperparameters_to_tune = {'binningFactor', 'mrmrFeaturePercent'};
+        p.binningFactors = [1, 2, 4, 8, 16];
+        p.mrmrFeaturePercent_range = [0.05, 0.1, 0.2, 0.3, 0.4];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         
         overallComparisonResults.pipelines = pipelines; % Store pipeline definitions once
@@ -245,8 +244,9 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
                 case 'fisher'
                     fisherRatios = calculate_fisher_ratio(X_train_processed, y_outer_train);
                     [~, sorted_indices] = sort(fisherRatios, 'descend', 'MissingPlacement','last');
-                    numFeat = min(bestHyperparams.numFisherFeatures, length(sorted_indices));
-                     if numFeat == 0 && bestHyperparams.numFisherFeatures > 0 && ~isempty(sorted_indices)
+                    numFeat = ceil(bestHyperparams.fisherFeaturePercent * length(sorted_indices));
+                    numFeat = min(numFeat, length(sorted_indices));
+                     if numFeat == 0 && bestHyperparams.fisherFeaturePercent > 0 && ~isempty(sorted_indices)
                         numFeat = 1; % Select at least one if possible and requested
                         warning('Fisher selected 0 features, forcing to 1. Check Fisher scores.');
                     elseif numFeat == 0 && isempty(sorted_indices)
@@ -284,7 +284,8 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
 
                 case 'mrmr'
                     y_outer_train_cat = categorical(y_outer_train); % fscmrmr needs categorical Y
-                    numFeatToSelect = min(bestHyperparams.numMRMRFeatures, size(X_train_processed,2));
+                    numFeatToSelect = ceil(bestHyperparams.mrmrFeaturePercent * size(X_train_processed,2));
+                    numFeatToSelect = min(numFeatToSelect, size(X_train_processed,2));
                     if numFeatToSelect <=0 || size(X_train_processed,2) == 0
                          selectedFeatureIndices_in_current_w = 1:size(X_train_processed,2);
                     else
