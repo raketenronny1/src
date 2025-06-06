@@ -17,6 +17,10 @@ end
 if ~isfield(cfg, 'projectRoot')
     cfg.projectRoot = pwd;
 end
+if ~isfield(cfg, 'outlierStrategy')
+    cfg.outlierStrategy = 'AND';
+end
+outlierStrategy = upper(string(cfg.outlierStrategy));
 
 % --- Define Paths (Simplified) ---
 P = setup_project_paths(cfg.projectRoot, 'Phase3');
@@ -33,16 +37,44 @@ dateStr = string(datetime('now','Format','yyyyMMdd'));
 
 %% 1. Load Data & Best Pipeline Info
 % =========================================================================
-% --- Load Entire Training Set ---
-fprintf('Loading entire training set...\n');
-trainingDataFile = fullfile(dataPath, 'training_set_no_outliers_T2Q.mat');
+% --- Load Entire Training Set depending on outlier strategy ---
+fprintf('Loading entire training set (Strategy: %s)...\n', outlierStrategy);
+if strcmpi(outlierStrategy, 'OR')
+    trainFiles = dir(fullfile(dataPath, '*_training_set_no_outliers_T2orQ.mat'));
+    if isempty(trainFiles)
+        error('No training set file found for OR strategy in %s.', dataPath);
+    end
+    [~,idxSort] = sort([trainFiles.datenum], 'descend');
+    trainingDataFile = fullfile(dataPath, trainFiles(idxSort(1)).name);
+    var_X = 'X_train_no_outliers_OR';
+    var_y = 'y_train_no_outliers_OR_num';
+    var_id = 'Patient_ID_no_outliers_OR';
+elseif strcmpi(outlierStrategy, 'AND')
+    trainFiles = dir(fullfile(dataPath, '*_training_set_no_outliers_T2andQ.mat'));
+    if isempty(trainFiles)
+        % Fallback to legacy filename without strategy suffix
+        trainingDataFile = fullfile(dataPath, 'training_set_no_outliers_T2Q.mat');
+        var_X = 'X_train_no_outliers';
+        var_y = 'y_train_numeric_no_outliers';
+        var_id = 'patientIDs_train_no_outliers';
+    else
+        [~,idxSort] = sort([trainFiles.datenum], 'descend');
+        trainingDataFile = fullfile(dataPath, trainFiles(idxSort(1)).name);
+        var_X = 'X_train_no_outliers_AND';
+        var_y = 'y_train_no_outliers_AND_num';
+        var_id = 'Patient_ID_no_outliers_AND';
+    end
+else
+    error('Invalid outlier strategy: %s', outlierStrategy);
+end
+
 try
-    loadedTrainingData = load(trainingDataFile, ...
-                       'X_train_no_outliers', 'y_train_numeric_no_outliers', ...
-                       'patientIDs_train_no_outliers'); % Assuming these are the final training variables
-    X_train_full = loadedTrainingData.X_train_no_outliers;
-    y_train_full = loadedTrainingData.y_train_numeric_no_outliers;
-    % probeIDs_train_full = loadedTrainingData.patientIDs_train_no_outliers; % May not be needed here unless for y_train_cat
+    loadedTrainingData = load(trainingDataFile, var_X, var_y, var_id);
+    X_train_full = loadedTrainingData.(var_X);
+    y_train_full = loadedTrainingData.(var_y);
+    if isfield(loadedTrainingData, var_id)
+        probeIDs_train_full = loadedTrainingData.(var_id); %#ok<NASGU>
+    end
 
     wavenumbers_data = load(fullfile(dataPath, 'wavenumbers.mat'), 'wavenumbers_roi');
     wavenumbers_original = wavenumbers_data.wavenumbers_roi;
@@ -113,11 +145,41 @@ catch ME
 end
 
 % --- Define Final Model Hyperparameters (MRMRLDA) ---
-% Based on Phase 2 results (mode of outerFoldBestHyperparams for MRMRLDA)
-final_binningFactor = 1; % Adjust if Phase 2 recommended a different factor
-final_mrmrFeaturePercent = 0.1; % Select 10%% of available features
-fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, MRMR Percent = %.2f\n', ...
-    final_binningFactor, final_mrmrFeaturePercent);
+% Attempt to load best hyperparameters from Phase 2 results for the chosen strategy
+phase2ModelsPath = fullfile(P.projectRoot, 'models', 'Phase2');
+if strcmpi(outlierStrategy,'OR')
+    bestPattern = '*_Phase2_BestPipelineInfo_Strat_OR.mat';
+else
+    bestPattern = '*_Phase2_BestPipelineInfo_Strat_AND.mat';
+end
+bestFiles = dir(fullfile(phase2ModelsPath, bestPattern));
+final_binningFactor = 1;
+final_mrmrFeaturePercent = 0.1;
+if ~isempty(bestFiles)
+    [~,idxHP] = sort([bestFiles.datenum],'descend');
+    hpFile = fullfile(phase2ModelsPath, bestFiles(idxHP(1)).name);
+    try
+        hpData = load(hpFile,'bestPipelineSummary_strat');
+        bps = hpData.bestPipelineSummary_strat;
+        binVals = [];
+        mrmrVals = [];
+        if isfield(bps,'outerFoldBestHyperparams') && iscell(bps.outerFoldBestHyperparams)
+            for k=1:length(bps.outerFoldBestHyperparams)
+                hp = bps.outerFoldBestHyperparams{k};
+                if isfield(hp,'binningFactor'), binVals=[binVals; hp.binningFactor]; end
+                if isfield(hp,'mrmrFeaturePercent'), mrmrVals=[mrmrVals; hp.mrmrFeaturePercent]; end
+            end
+        end
+        if ~isempty(binVals), final_binningFactor = mode(binVals); end
+        if ~isempty(mrmrVals), final_mrmrFeaturePercent = mode(mrmrVals); end
+    catch
+        warning('Could not load Phase 2 hyperparameters from %s. Using defaults.', hpFile);
+    end
+else
+    warning('No Phase 2 hyperparameter file found matching %s. Using defaults.', bestPattern);
+end
+fprintf('Final hyperparameters for MRMRLDA: Binning Factor = %d, MRMR Percent = %.2f (Strategy: %s)\n', ...
+    final_binningFactor, final_mrmrFeaturePercent, outlierStrategy);
 
 % --- Define Metric Names (needed for calculate_performance_metrics) ---
 metricNames = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'NPV_WHO1', 'F1_WHO3', 'F2_WHO3', 'AUC'};
@@ -276,11 +338,11 @@ finalModelPackage.testSetPerformance = testSetPerformanceMetrics;
 finalModelPackage.trainingDataFile = trainingDataFile;
 finalModelPackage.testDataFile = testDataFile;
 
-modelFilename = fullfile(modelsPath, sprintf('%s_Phase3_FinalMRMRLDA_Model.mat', dateStr));
+modelFilename = fullfile(modelsPath, sprintf('%s_Phase3_FinalMRMRLDA_Model_Strat_%s.mat', dateStr, outlierStrategy));
 save(modelFilename, 'finalModelPackage');
 fprintf('\nFinal model package saved to: %s\n', modelFilename);
 
-resultsFilename_phase3 = fullfile(resultsPath, sprintf('%s_Phase3_TestSetResults.mat', dateStr));
+resultsFilename_phase3 = fullfile(resultsPath, sprintf('%s_Phase3_TestSetResults_Strat_%s.mat', dateStr, outlierStrategy));
 save(resultsFilename_phase3, 'testSetPerformanceMetrics', 'final_binningFactor', 'final_numMRMRFeatures', 'final_mrmrFeaturePercent', 'final_selected_wavenumbers');
 fprintf('Phase 3 test set results saved to: %s\n', resultsFilename_phase3);
 
@@ -293,7 +355,7 @@ if exist('confusionchart','file') % Check if confusionchart is available (newer 
         'ColumnSummary','column-normalized', ...
         'RowSummary','row-normalized', ...
         'Title', sprintf('Confusion Matrix (Test Set) - MRMRLDA (F2: %.3f)', testSetPerformanceMetrics.F2_WHO3));
-    confMatFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ConfusionMatrix_TestSet', dateStr));
+    confMatFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ConfusionMatrix_TestSet_Strat_%s', dateStr, outlierStrategy));
     savefig(gcf, [confMatFigFilenameBase, '.fig']);
     exportgraphics(gcf, [confMatFigFilenameBase, '.tiff'], 'Resolution', 300);
 else % Fallback for older MATLAB
@@ -463,7 +525,7 @@ grid on;
 legend([h1, h3], 'Location', 'best');
 set(gca, 'FontSize', 12);
 
-probeProbFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevelProbabilities_TestSet', dateStr));
+probeProbFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevelProbabilities_TestSet_Strat_%s', dateStr, outlierStrategy));
 savefig(gcf, [probeProbFigFilenameBase, '.fig']);
 exportgraphics(gcf, [probeProbFigFilenameBase, '.tiff'], 'Resolution', 300);
 fprintf('Probe-level probability plot saved to: %s.(fig/tiff)\n', probeProbFigFilenameBase);
@@ -489,7 +551,7 @@ if ~isempty(y_true_probe_valid) && length(unique(y_true_probe_valid)) > 1
     disp(probeMetricsTable);
 
     % Save these probe-level metrics
-    probeLevelResultsFilename = fullfile(resultsPath, sprintf('%s_Phase3_ProbeLevelTestSetResults.mat', dateStr));
+    probeLevelResultsFilename = fullfile(resultsPath, sprintf('%s_Phase3_ProbeLevelTestSetResults_Strat_%s.mat', dateStr, outlierStrategy));
     save(probeLevelResultsFilename, 'probeLevelResults', 'probeLevelPerfMetrics');
     fprintf('Phase 3 probe-level results and metrics saved to: %s\n', probeLevelResultsFilename);
 
@@ -500,7 +562,7 @@ if ~isempty(y_true_probe_valid) && length(unique(y_true_probe_valid)) > 1
             'ColumnSummary','column-normalized', ...
             'RowSummary','row-normalized', ...
             'Title', sprintf('Probe-Level Confusion Matrix (Mean Prob > 0.5, F2: %.3f)', probeLevelPerfMetrics.F2_WHO3));
-        confMatProbeFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ConfusionMatrix_ProbeLevel_MeanProb', dateStr));
+        confMatProbeFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ConfusionMatrix_ProbeLevel_MeanProb_Strat_%s', dateStr, outlierStrategy));
         savefig(gcf, [confMatProbeFigFilenameBase, '.fig']);
         exportgraphics(gcf, [confMatProbeFigFilenameBase, '.tiff'], 'Resolution', 300);
     end
@@ -734,7 +796,7 @@ set(gca, 'FontSize', 10); % This was 'set(gca, 'FontSize', 10);' in your origina
 
 % Save the figure (ensure figViolin is the correct handle for the figure containing the violin plot)
 % Assuming the figure was created with: figViolin = figure(...);
-probeViolinFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevelViolinProbabilities_TestSet', dateStr));
+probeViolinFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ProbeLevelViolinProbabilities_TestSet_Strat_%s', dateStr, outlierStrategy));
 % Ensure 'figViolin' is the correct figure handle for the violin plot
 current_fig_handle_for_violin = gcf; % Or if you stored it e.g., fig_violin_plot_handle = figure(...);
 if isgraphics(current_fig_handle_for_violin)
@@ -778,7 +840,7 @@ if exist('y_test_full_numeric', 'var') && exist('scores_for_positive_class_test'
                                               true); % Use normal deviate scale for DET
 
     if isgraphics(fh_roc_det_spectrum) % Check if figure was created
-        rocDetFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ROC_DET_SpectrumLevel', dateStr));
+        rocDetFigFilenameBase = fullfile(figuresPath, sprintf('%s_Phase3_ROC_DET_SpectrumLevel_Strat_%s', dateStr, outlierStrategy));
         try
             exportgraphics(fh_roc_det_spectrum, [rocDetFigFilenameBase, '.tiff'], 'Resolution', 300);
             savefig(fh_roc_det_spectrum, [rocDetFigFilenameBase, '.fig']);

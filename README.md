@@ -59,13 +59,11 @@ Train the MRMR–LDA pipeline on the full training set and evaluate on the test 
 MRMR features are chosen based on a percentage of the binned spectrum rather than a fixed count.
 
 ```matlab
+% Default uses the "AND" consensus strategy
 run('src/run_phase3_final_evaluation.m')
-```
 
-For the alternative "T2 OR Q" outlier strategy execute:
-
-```matlab
-run('src/run_phase3_final_evaluation_OR_strategy.m')
+% To evaluate the alternative "OR" strategy
+run_phase3_final_evaluation(struct('outlierStrategy','OR'))
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
