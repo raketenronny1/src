@@ -574,7 +574,11 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
     end
     lda = fitcdiscr(Xp, y);
     modelStruct.LDAModel = lda;
-    modelStruct.binningFactor = getfield(hp,'binningFactor',1);
+if isfield(hp, 'binningFactor') && ~isempty(hp.binningFactor)
+    modelStruct.binningFactor = hp.binningFactor;
+else
+    modelStruct.binningFactor = 1; % Assign default value of 1 if not present
+end
     modelStruct.featureSelectionMethod = pipelineConfig.feature_selection_method;
     modelStruct.selectedFeatureIndices = selectedIdx;
     modelStruct.selectedWavenumbers = selectedWn;
