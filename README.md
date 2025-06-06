@@ -26,6 +26,7 @@ figures/         % generated plots
 - MATLAB R2021b or newer
 - **Statistics and Machine Learning Toolbox** (for LDA, cross-validation and `fscmrmr`)
 - **Signal Processing Toolbox** (for spectral smoothing via Savitzky–Golay filtering)
+- `spider_plot_R2019b` from MATLAB Central File Exchange (<https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot>) for radar/spider plots
 
 ## Configuration helper
 
@@ -136,4 +137,12 @@ M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
+
+## Visualizing project results
+
+The script `plotting/run_visualize_project_results.m` generates summary figures for Phases 2–4.
+It requires the `spider_plot_R2019b` helper referenced in the requirements above.
+If the script reports that this function is missing, download it from the
+[MATLAB Central File Exchange](https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot)
+and add it to your MATLAB path before running the visualization script.
 
