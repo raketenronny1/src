@@ -378,6 +378,20 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         pipelineSummary.outerFoldMetrics_mean = meanOuterFoldMetrics;
         pipelineSummary.outerFoldMetrics_std = stdOuterFoldMetrics;
         pipelineSummary.outerFoldBestHyperparams = outerFoldBestHyperparams;
+        %% Train final model on full training data using aggregated best hyperparameters
+        aggHyper = aggregate_best_hyperparams(outerFoldBestHyperparams);
+        try
+            [finalModel, selectedIdx, selectedWn] = train_final_pipeline_model(...
+                X_train_full, y_train_full, wavenumbers_original, currentPipeline, aggHyper);
+            modelFilename = fullfile(modelsPath, sprintf('%s_Phase2_%s_Model_Strat_%s.mat', ...
+                dateStrForFilenames, currentPipeline.name, currentOutlierStrategy));
+            save(modelFilename, 'finalModel', 'aggHyper', 'selectedIdx', 'selectedWn');
+            pipelineSummary.finalModelFile = modelFilename;
+            fprintf('Saved final model for %s (strategy %s) to %s\n', currentPipeline.name, currentOutlierStrategy, modelFilename);
+        catch ME_train
+            warning('Failed to train final model for %s: %s', currentPipeline.name, ME_train.message);
+            pipelineSummary.finalModelFile = '';
+        end
         % pipelineSummary.outerFoldSelectedFeaturesInfo = outerFoldSelectedFeaturesInfo; % If saving
         pipelineSummary.metricNames = metricNames;
         currentStrategyPipelinesResults{iPipeline} = pipelineSummary;
@@ -485,4 +499,78 @@ end
 
 % This should be one of the last outputs of your script.
 fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete (with OverallComparisonData save): %s\n', string(datetime('now')));
+end
+
+function aggHyper = aggregate_best_hyperparams(hyperparamCell)
+    aggHyper = struct();
+    if isempty(hyperparamCell)
+        return;
+    end
+    allFields = unique(cellfun(@fieldnames, hyperparamCell, 'UniformOutput', false));
+    if iscell(allFields)
+        allFields = unique([allFields{:}]);
+    end
+    for f = 1:numel(allFields)
+        fname = allFields{f};
+        values = []; %#ok<AGROW>
+        for k = 1:numel(hyperparamCell)
+            hp = hyperparamCell{k};
+            if isfield(hp, fname)
+                values(end+1) = hp.(fname); %#ok<AGROW>
+            end
+        end
+        if ~isempty(values)
+            aggHyper.(fname) = mode(values);
+        end
+    end
+end
+
+function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wn, pipelineConfig, hp)
+    modelStruct = struct();
+    selectedIdx = 1:size(X,2);
+    selectedWn = wn;
+    Xp = X;
+    currentWn = wn;
+    if isfield(hp,'binningFactor') && hp.binningFactor > 1
+        [Xp,currentWn] = bin_spectra(X, wn, hp.binningFactor);
+    end
+    switch lower(pipelineConfig.feature_selection_method)
+        case 'fisher'
+            fr = calculate_fisher_ratio(Xp, y);
+            [~, order] = sort(fr,'descend','MissingPlacement','last');
+            numF = ceil(hp.fisherFeaturePercent * numel(order));
+            numF = max(1, min(numF, numel(order)));
+            selectedIdx = order(1:numF);
+            Xp = Xp(:,selectedIdx);
+            selectedWn = currentWn(selectedIdx);
+        case 'pca'
+            [coeff, score, ~, ~, explained, mu] = pca(Xp);
+            numC = find(cumsum(explained) >= hp.pcaVarianceToExplain*100,1,'first');
+            if isempty(numC)
+                numC = size(coeff,2);
+            end
+            selectedIdx = 1:numC;
+            Xp = score(:,selectedIdx);
+            modelStruct.PCACoeff = coeff(:,selectedIdx);
+            modelStruct.PCAMu = mu;
+            selectedWn = selectedIdx;
+        case 'mrmr'
+            numF = ceil(hp.mrmrFeaturePercent * size(Xp,2));
+            numF = max(1, min(numF, size(Xp,2)));
+            [rankedIdx,~] = fscmrmr(Xp,categorical(y));
+            selectedIdx = rankedIdx(1:numF);
+            Xp = Xp(:,selectedIdx);
+            selectedWn = currentWn(selectedIdx);
+        otherwise
+            selectedIdx = 1:size(Xp,2);
+            selectedWn = currentWn;
+    end
+    lda = fitcdiscr(Xp, y);
+    modelStruct.LDAModel = lda;
+    modelStruct.binningFactor = getfield(hp,'binningFactor',1);
+    modelStruct.featureSelectionMethod = pipelineConfig.feature_selection_method;
+    modelStruct.selectedFeatureIndices = selectedIdx;
+    modelStruct.selectedWavenumbers = selectedWn;
+    modelStruct.originalWavenumbers = wn;
+    modelStruct.binnedWavenumbers = currentWn;
 end
