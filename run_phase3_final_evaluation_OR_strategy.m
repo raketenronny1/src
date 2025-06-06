@@ -142,7 +142,7 @@ fprintf('Loading best hyperparameters for MRMRLDA (Strategy: OR) from Phase 2 mo
 bestHyperparamFilePattern_OR = fullfile(phase2ModelsPath, sprintf('*_Phase2_BestPipelineInfo_Strat_OR.mat'));
 bestHyperparamFiles_OR = dir(bestHyperparamFilePattern_OR);
 
-final_binningFactor = 8; % Default
+final_binningFactor = 1; % Default and fixed at 1 for OR strategy
 final_numMRMRFeatures = 50; % Default
 
 if isempty(bestHyperparamFiles_OR)
@@ -172,10 +172,8 @@ else
                 end
             end
             
-            if ~isempty(all_binning_factors_p2_OR)
-                final_binningFactor = mode(all_binning_factors_p2_OR);
-            else
-                warning('No binning factors found in loaded bestPipelineSummary_strat for MRMRLDA (OR strategy). Using predefined default %d.', final_binningFactor);
+            if isempty(all_binning_factors_p2_OR)
+                warning('No binning factors found in loaded bestPipelineSummary_strat for MRMRLDA (OR strategy). Using fixed default %d.', final_binningFactor);
             end
             if ~isempty(all_mrmr_features_p2_OR)
                 final_numMRMRFeatures = mode(all_mrmr_features_p2_OR);
