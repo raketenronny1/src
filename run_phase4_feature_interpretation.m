@@ -38,19 +38,16 @@ dateStr = string(datetime('now','Format','yyyyMMdd'));
 %% 1. Load Final Model Package from Phase 3
 % =========================================================================
 fprintf('Loading final model package from Phase 3...\n');
-modelFiles = dir(fullfile(modelsPath, '*_Phase3_FinalMRMRLDA_Model.mat'));
-if isempty(modelFiles)
-    error('No Phase 3 final model file found in %s. Run Phase 3 script first.', modelsPath);
+compFiles = dir(fullfile(projectRoot,'results','Phase3','*_Phase3_ComparisonResults_*.mat'));
+if isempty(compFiles)
+    error('No Phase 3 comparison results found. Run Phase 3 first.');
 end
-[~,idxSort] = sort([modelFiles.datenum],'descend');
-latestModelFile = fullfile(modelsPath, modelFiles(idxSort(1)).name);
+[~,idxSort] = sort([compFiles.datenum],'descend');
+latestComp = load(fullfile(compFiles(idxSort(1)).folder, compFiles(idxSort(1)).name),'bestModelInfo');
+latestModelFile = latestComp.bestModelInfo.modelFile;
 fprintf('Using final model from: %s\n', latestModelFile);
-try
-    load(latestModelFile, 'finalModelPackage');
-catch ME
-    fprintf('ERROR loading final model package from %s: %s\n', latestModelFile, ME.message);
-    return;
-end
+load(latestModelFile,'finalModel');
+finalModelPackage = finalModel;
 
 % Extract necessary components
 finalLDAModel         = finalModelPackage.LDAModel;
