@@ -31,10 +31,17 @@ dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
 plottingHelpersPath = fullfile(projectRoot, 'plotting'); 
 if exist(plottingHelpersPath, 'dir')
-    addpath(plottingHelpersPath); 
+    addpath(plottingHelpersPath);
     fprintf('Added to path: %s\n', plottingHelpersPath);
 else
     warning('Plotting helpers path not found: %s. Ensure spider_plot_R2019b.m is on the MATLAB path or in this directory.', plottingHelpersPath);
+end
+
+% Verify spider plot function dependency
+if exist('spider_plot_R2019b', 'file') ~= 2
+    error(['Required plotting helper "spider_plot_R2019b.m" is missing from the MATLAB path.', newline, ...
+        'Download it from MATLAB Central File Exchange: ', ...
+        'https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot']);
 end
 
 % Plotting Defaults
