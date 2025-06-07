@@ -20,6 +20,11 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             if ismember('fisherFeaturePercent', pipelineConfig.hyperparameters_to_tune)
                 paramGridCells{end+1} = pipelineConfig.fisherFeaturePercent_range(:)';
                 paramNames{end+1} = 'fisherFeaturePercent';
+            elseif ismember('numFisherFeatures', pipelineConfig.hyperparameters_to_tune)
+                % Backwards compatibility with older configs that tune a fixed
+                % number of Fisher features instead of a percentage
+                paramGridCells{end+1} = pipelineConfig.numFisherFeatures_range(:)';
+                paramNames{end+1} = 'numFisherFeatures';
             end
         case 'pca'
             if ismember('pcaVarianceToExplain', pipelineConfig.hyperparameters_to_tune)

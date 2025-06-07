@@ -545,7 +545,13 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
         case 'fisher'
             fr = calculate_fisher_ratio(Xp, y);
             [~, order] = sort(fr,'descend','MissingPlacement','last');
-            numF = ceil(hp.fisherFeaturePercent * numel(order));
+            if isfield(hp,'fisherFeaturePercent')
+                numF = ceil(hp.fisherFeaturePercent * numel(order));
+            elseif isfield(hp,'numFisherFeatures')
+                numF = hp.numFisherFeatures;
+            else
+                numF = numel(order);
+            end
             numF = max(1, min(numF, numel(order)));
             selectedIdx = order(1:numF);
             Xp = Xp(:,selectedIdx);
