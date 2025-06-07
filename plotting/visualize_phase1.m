@@ -1,36 +1,32 @@
-% generate_phase1_figures.m
+function visualize_phase1(P, opts)
+%VISUALIZE_PHASE1 Generate key figures for Phase 1 of the project.
 %
-% Script to generate key figures for Phase 1:
-% Data Setup, Preprocessing, Splitting, and Outlier Detection.
-% Adheres to specified plotting guidelines.
-%
-% Date: 2025-05-17 (Corrected data loading logic and conditional plotting)
+%   VISUALIZE_PHASE1(P, opts) reads the required data and writes the
+%   dissertation figures to a subfolder of the figures directory.
+%   P   - struct returned by SETUP_PROJECT_PATHS (optional)
+%   opts- plotting options from PLOT_SETTINGS (optional)
 
-%% 0. Initialization & Setup
-% =========================================================================
-clear; clc; close all;
-fprintf('Generating Phase 1 Dissertation Figures - %s\n', string(datetime('now')));
+    if nargin < 1 || isempty(P)
+        P = setup_project_paths(pwd);
+    end
+    if nargin < 2 || isempty(opts)
+        opts = plot_settings();
+    end
 
-% --- Define Paths ---
-projectRoot = pwd; 
-if ~exist(fullfile(projectRoot, 'src'), 'dir') || ~exist(fullfile(projectRoot, 'data'), 'dir')
-    error(['Project structure not found. Please ensure MATLAB''s "Current Folder" is set to your ' ...
-           'main project root directory. Current directory is: %s'], projectRoot);
-end
+    fprintf('Generating Phase 1 Dissertation Figures - %s\n', string(datetime('now')));
 
-dataPath      = fullfile(projectRoot, 'data');
-figuresPath   = fullfile(projectRoot, 'figures', 'Phase1_Dissertation_Plots');
-if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
-dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
-
-% --- Plotting Defaults ---
-plotFontSize = 12;
-plotXLabel = 'Wellenzahl (cm^{-1})';
-plotYLabelAbsorption = 'Absorption (a.u.)';
-plotXLim = [950 1800];
-colorWHO1 = [0.9, 0.6, 0.4]; 
-colorWHO3 = [0.4, 0.702, 0.902]; 
-colorOutlier = [0.8, 0, 0]; 
+    projectRoot = P.projectRoot;
+    dataPath    = P.dataPath;
+    figuresPath = fullfile(P.figuresPath, 'Phase1_Dissertation_Plots');
+    if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
+    dateStrForFilenames = opts.datePrefix;
+    plotFontSize = opts.plotFontSize;
+    plotXLabel = opts.plotXLabel;
+    plotYLabelAbsorption = opts.plotYLabelAbsorption;
+    plotXLim = opts.plotXLim;
+    colorWHO1 = opts.colorWHO1;
+    colorWHO3 = opts.colorWHO3;
+    colorOutlier = [0.8,0,0];
 
 %% 1. Load Wavenumbers (Essential for all spectral plots)
 % =========================================================================
@@ -482,3 +478,4 @@ else
 end
 
 fprintf('\nPhase 1 plotting script finished.\n');
+end
