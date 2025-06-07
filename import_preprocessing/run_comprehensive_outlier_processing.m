@@ -105,7 +105,7 @@ P_for_visualization = P;
 P_for_visualization.figuresPath_OutlierExploration = P.figuresPath_OutlierExploration;
 
 try
-    generate_exploratory_outlier_visualizations(X_train_full_flat, ...
+    visualize_outlier_exploration(X_train_full_flat, ...
                                                 y_numeric_full_flat, y_cat_full_flat, Patient_ID_full_flat, ...
                                                 wavenumbers_roi, ...
                                                 score_pca, ...         % Pass the defined score_pca
@@ -116,9 +116,9 @@ try
                                                 flag_T2_all, flag_Q_all, is_T2_only_all, is_Q_only_all, ...
                                                 is_T2_and_Q_all, is_OR_outlier_all, is_normal_all, ...
                                                 P_for_visualization); 
-    fprintf('Successfully called generate_exploratory_outlier_visualizations.\n');
+    fprintf('Successfully called visualize_outlier_exploration.\n');
 catch ME_vis_call
-    fprintf('ERROR calling generate_exploratory_outlier_visualizations: %s\n', ME_vis_call.message);
+    fprintf('ERROR calling visualize_outlier_exploration: %s\n', ME_vis_call.message);
     disp(ME_vis_call.getReport);
     warning('Continuing script without all exploratory visualizations if an error occurred in the plotting function.');
 end

@@ -93,20 +93,20 @@ Outputs appear in `results/Phase4` and `figures/Phase4`.
 ### Visualizing project results
 
 After completing Phases 2–4 you can summarise the pipeline outputs with
-`plotting/run_visualize_project_results.m`. Running this script generates
+`plotting/visualize_project_summary.m`. Running this script generates
 publication-ready plots under `figures/ProjectSummaryFigures` and creates bar
 charts comparing the consensus and OR outlier strategies in
 `figures/OutlierStrategyComparison_Plots_From_VisualizeScript`.
 
-Other scripts that produce figures are:
+A helper menu `plotting/run_visualization_menu.m` lets you choose which figures to create. Other scripts that produce figures are:
 
-- `generate_phase1_figures.m` – requires `data/wavenumbers.mat` and
+- `plotting/visualize_phase1.m` – requires `data/wavenumbers.mat` and
   `data/data_table_complete.mat` and writes Phase 1 plots to
   `figures/Phase1_Dissertation_Plots`.
-- `plotting/side_quest_visualize_binning_effects.m` – visualises the effect of
+- `plotting/visualize_binning_effects.m` – visualises the effect of
   different binning factors using
   `data/training_set_no_outliers_T2Q.mat` and outputs to `figures/SideQuests`.
-- `generate_exploratory_outlier_visualizations.m` – a function called from
+- `plotting/visualize_outlier_exploration.m` – a function called from
   `import_preprocessing/run_comprehensive_outlier_processing.m`.  It expects the
   spectra, labels, PCA results and a struct containing a
   `figuresPath_OutlierExploration` field and produces several exploratory plots
@@ -115,14 +115,17 @@ Other scripts that produce figures are:
 Example usage:
 
 ```matlab
+% Interactive menu
+run('src/plotting/run_visualization_menu.m')
+
 % Create summary plots after Phase 4
-run('src/plotting/run_visualize_project_results.m')
+run('src/plotting/visualize_project_summary.m')
 
 % Phase 1 figures
-run('src/generate_phase1_figures.m')
+run('src/plotting/visualize_phase1.m')
 
 % Binning effect visualisation
-run('src/plotting/side_quest_visualize_binning_effects.m')
+run('src/plotting/visualize_binning_effects.m')
 ```
 
 ## Refactored helper functions
@@ -140,7 +143,7 @@ These routines can be incorporated in custom scripts or the provided pipeline.
 
 ## Visualizing project results
 
-The script `plotting/run_visualize_project_results.m` generates summary figures for Phases 2–4.
+The script `plotting/visualize_project_summary.m` generates summary figures for Phases 2–4.
 It requires the `spider_plot_R2019b` helper referenced in the requirements above.
 If the script reports that this function is missing, download it from the
 [MATLAB Central File Exchange](https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot)
