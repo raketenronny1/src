@@ -37,9 +37,18 @@ function visualize_project_summary(cfg, opts)
         error('No Phase 3 results file found for strategy %s. Run Phase 3 first.', strategy);
     end
     [~,idxSortP3] = sort([p3_files.datenum],'descend');
-    p3_data = load(fullfile(p3_files(idxSortP3(1)).folder, p3_files(idxSortP3(1)).name), 'bestModelInfo');
-    bestPipelineName = p3_data.bestModelInfo.name;
-    bestPipelineTestMetrics = p3_data.bestModelInfo.metrics;
+    p3_file = fullfile(p3_files(idxSortP3(1)).folder, p3_files(idxSortP3(1)).name);
+    p3_loaded = load(p3_file, 'bestModelInfo');
+    if ~isfield(p3_loaded,'bestModelInfo') || ~isstruct(p3_loaded.bestModelInfo)
+        warning('Field "bestModelInfo" missing in %s. Unable to plot summary.', p3_file);
+        return
+    end
+    bestPipelineName = p3_loaded.bestModelInfo.name;
+    bestPipelineTestMetrics = p3_loaded.bestModelInfo.metrics;
+    if isempty(bestPipelineName) || strcmpi(bestPipelineName,'none')
+        warning('Best pipeline name not found in Phase 3 results.');
+        return
+    end
 
     p2_files = dir(fullfile(P.resultsPath, 'Phase2', sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat', strategy)));
     if isempty(p2_files)
@@ -56,7 +65,8 @@ function visualize_project_summary(cfg, opts)
         end
     end
     if isempty(bestPipelineCVMetrics)
-        error('Could not find CV metrics for the best pipeline (%s) in the Phase 2 results file.', bestPipelineName);
+        warning('Could not find CV metrics for the best pipeline (%s) in the Phase 2 results file.', bestPipelineName);
+        return
     end
 
     %% 2. Spider Plot
