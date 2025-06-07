@@ -48,9 +48,12 @@ y_test = vertcat(y_list{:});
 probeIDs_test = vertcat(probe_list{:});
 
 %% 2. Locate models and Phase2 results
-modelFiles = dir(fullfile(modelsPathP2,sprintf('*_Phase2_*_Model_Strat_%s.mat',strategy)));
+modelPattern = sprintf('*_Phase2_*_Model_Strat_%s.mat',strategy);
+modelFiles = dir(fullfile(modelsPathP2, modelPattern));
 if isempty(modelFiles)
-    error('No Phase 2 models found for strategy %s',strategy);
+    fullPattern = fullfile(modelsPathP2, modelPattern);
+    error('No Phase 2 models found for strategy %s. Expected files matching %s', ...
+        strategy, fullPattern);
 end
 resFile = dir(fullfile(resultsPathP2,sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat',strategy)));
 if isempty(resFile)
