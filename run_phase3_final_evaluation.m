@@ -103,8 +103,13 @@ end
 
 %% 4. Compare with CV metrics if available
 if ~isempty(cvData)
+    % Extract the pipeline names from the cell array of structs into a new cell array.
+    % This is the corrected part.
+    pipeline_names_from_cv = cellfun(@(p) p.name, pipelinesCV, 'UniformOutput', false);
+
     for i=1:numel(results)
-        idx = find(strcmpi({pipelinesCV.name},results(i).name));
+        % Now, compare the name of the current test result with the list of names from CV.
+        idx = find(strcmpi(pipeline_names_from_cv, results(i).name));
         if ~isempty(idx)
             results(i).CV_Metrics = cvData{idx}.outerFoldMetrics_mean;
         end
