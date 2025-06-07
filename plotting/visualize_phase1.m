@@ -165,8 +165,39 @@ if fig1_data_processed_successfully
     exportgraphics(fig1_handle, figName_P1_F1, 'Resolution', 300);
     fprintf('Figure 1 (Preprocessing Comparison) saved to: %s\n', figName_P1_F1);
     savefig(fig1_handle, strrep(figName_P1_F1, '.tiff', '.fig'));
+
 else
     fprintf('Skipping Figure 1: Preprocessing comparison plot due to data loading or processing issues.\n');
+end
+
+%% Prepare cleaned training data for Figure 2
+% ------------------------------------------------------------
+data_cleaned_loaded_fig2 = false;
+X_train_cleaned_fig2 = [];
+y_train_numeric_cleaned_fig2 = [];
+try
+    cleanedFilesFig2 = dir(fullfile(dataPath,'*_training_set_no_outliers_*.mat'));
+    if ~isempty(cleanedFilesFig2)
+        [~,idxCF] = sort([cleanedFilesFig2.datenum],'descend');
+        cleanedFileFig2 = fullfile(cleanedFilesFig2(idxCF(1)).folder, cleanedFilesFig2(idxCF(1)).name);
+        fprintf('Loading cleaned training data for Figure 2 from: %s\n', cleanedFileFig2);
+        tmpClean = load(cleanedFileFig2);
+        if isfield(tmpClean,'X_train_no_outliers_AND') && isfield(tmpClean,'y_train_no_outliers_AND_num')
+            X_train_cleaned_fig2 = tmpClean.X_train_no_outliers_AND;
+            y_train_numeric_cleaned_fig2 = tmpClean.y_train_no_outliers_AND_num;
+            data_cleaned_loaded_fig2 = true;
+        elseif isfield(tmpClean,'X_train_no_outliers_OR') && isfield(tmpClean,'y_train_no_outliers_OR_num')
+            X_train_cleaned_fig2 = tmpClean.X_train_no_outliers_OR;
+            y_train_numeric_cleaned_fig2 = tmpClean.y_train_no_outliers_OR_num;
+            data_cleaned_loaded_fig2 = true;
+        else
+            warning('Expected variables not found in %s. Figure 2 will be skipped.', cleanedFileFig2);
+        end
+    else
+        warning('No cleaned training set found in %s. Figure 2 will be skipped.', dataPath);
+    end
+catch ME_clean
+    fprintf('WARNING: Failed to load cleaned training data for Figure 2: %s\n', ME_clean.message);
 end
 
 %% ---- FIGURE 2: Mean Spectra (WHO-1, WHO-3 separate) & Difference Spectrum ----
