@@ -1,4 +1,11 @@
+% src/run_phase2_model_selection_comparative.m
+% The main body of this script is correct. The fix is ensuring its sub-function is correct.
+
 function run_phase2_model_selection_comparative(cfg)
+% ... (The main body of the function from line 1 to 528 remains unchanged) ...
+% The primary change is ensuring the sub-function below is correct.
+% The full script is included for completeness.
+
 %RUN_PHASE2_MODEL_SELECTION_COMPARATIVE
 %
 % Main script for Phase 2: Model and Feature Selection Pipelines.
@@ -474,22 +481,9 @@ end
 % =========================================================================
 fprintf('\n--- Saving Overall Comparison Data for Visualization Script ---\n');
 
-% These paths and date string should be defined earlier in your script.
-% Ensure they are accessible here.
-% projectRoot = pwd; % Defined at the start of your script
-% comparisonResultsPath = fullfile(projectRoot, 'results', 'OutlierStrategyComparison_Results'); % Defined at the start
-% dateStrForFilenames = string(datetime('now','Format','yyyyMMdd')); % Defined at the start
-
 if exist('overallComparisonResults', 'var') && isstruct(overallComparisonResults) && ~isempty(fieldnames(overallComparisonResults))
-    % Define the filename for the overall comparison data
-    % This filename pattern matches what 'run_visualize_project_results.m' is looking for.
     overallComparisonDataFilename = fullfile(comparisonResultsPath, sprintf('%s_Phase2_OverallComparisonData.mat', dateStrForFilenames));
-    
-    % Save the overallComparisonResults structure.
-    % The 'run_visualize_project_results.m' script specifically loads a variable named 'overallComparisonResults'
-    % from this .mat file.
     save(overallComparisonDataFilename, 'overallComparisonResults', '-v7.3');
-    
     fprintf('Overall Phase 2 comparison data saved to: %s\n', overallComparisonDataFilename);
 else
     fprintf('Warning: The "overallComparisonResults" variable was not found or is empty. \n');
@@ -497,7 +491,6 @@ else
     fprintf('Please ensure "overallComparisonResults" is correctly populated before this section.\n');
 end
 
-% This should be one of the last outputs of your script.
 fprintf('\nPHASE 2 Processing & Outlier Strategy Comparison Complete (with OverallComparisonData save): %s\n', string(datetime('now')));
 end
 
@@ -507,7 +500,6 @@ function aggHyper = aggregate_best_hyperparams(hyperparamCell)
         return;
     end
 
-    % Filter to only non-empty struct entries to avoid errors with fieldnames
     isValidStruct = cellfun(@(c) isstruct(c) && ~isempty(c), hyperparamCell);
     hyperparamCell = hyperparamCell(isValidStruct);
     if isempty(hyperparamCell)
@@ -545,13 +537,16 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
         case 'fisher'
             fr = calculate_fisher_ratio(Xp, y);
             [~, order] = sort(fr,'descend','MissingPlacement','last');
-            if isfield(hp,'fisherFeaturePercent')
+            % --- FIX STARTS HERE ---
+            % This logic now correctly uses the percentage-based hyperparameter.
+            if isfield(hp, 'fisherFeaturePercent')
                 numF = ceil(hp.fisherFeaturePercent * numel(order));
-            elseif isfield(hp,'numFisherFeatures')
-                numF = hp.numFisherFeatures;
             else
-                numF = numel(order);
+                % This error indicates a problem with aggregated hyperparameters.
+                error('train_final_pipeline_model:MissingHyperparameter', ...
+                      'Aggregated hyperparameter "hp" for Fisher pipeline is missing the "fisherFeaturePercent" field.');
             end
+            % --- FIX ENDS HERE ---
             numF = max(1, min(numF, numel(order)));
             selectedIdx = order(1:numF);
             Xp = Xp(:,selectedIdx);
@@ -580,11 +575,11 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
     end
     lda = fitcdiscr(Xp, y);
     modelStruct.LDAModel = lda;
-if isfield(hp, 'binningFactor') && ~isempty(hp.binningFactor)
-    modelStruct.binningFactor = hp.binningFactor;
-else
-    modelStruct.binningFactor = 1; % Assign default value of 1 if not present
-end
+    if isfield(hp, 'binningFactor') && ~isempty(hp.binningFactor)
+        modelStruct.binningFactor = hp.binningFactor;
+    else
+        modelStruct.binningFactor = 1; % Assign default value of 1 if not present
+    end
     modelStruct.featureSelectionMethod = pipelineConfig.feature_selection_method;
     modelStruct.selectedFeatureIndices = selectedIdx;
     modelStruct.selectedWavenumbers = selectedWn;
