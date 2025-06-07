@@ -537,16 +537,7 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
         case 'fisher'
             fr = calculate_fisher_ratio(Xp, y);
             [~, order] = sort(fr,'descend','MissingPlacement','last');
-            % --- FIX STARTS HERE ---
-            % This logic now correctly uses the percentage-based hyperparameter.
-            if isfield(hp, 'fisherFeaturePercent')
-                numF = ceil(hp.fisherFeaturePercent * numel(order));
-            else
-                % This error indicates a problem with aggregated hyperparameters.
-                error('train_final_pipeline_model:MissingHyperparameter', ...
-                      'Aggregated hyperparameter "hp" for Fisher pipeline is missing the "fisherFeaturePercent" field.');
-            end
-            % --- FIX ENDS HERE ---
+            numF = ceil(hp.fisherFeaturePercent * numel(order));
             numF = max(1, min(numF, numel(order)));
             selectedIdx = order(1:numF);
             Xp = Xp(:,selectedIdx);
@@ -575,12 +566,18 @@ function [modelStruct, selectedIdx, selectedWn] = train_final_pipeline_model(X, 
     end
     lda = fitcdiscr(Xp, y);
     modelStruct.LDAModel = lda;
+    
+    % --- Corrected Section ---
     if isfield(hp, 'binningFactor') && ~isempty(hp.binningFactor)
         modelStruct.binningFactor = hp.binningFactor;
     else
-        modelStruct.binningFactor = 1; % Assign default value of 1 if not present
+        modelStruct.binningFactor = 1;
     end
     modelStruct.featureSelectionMethod = pipelineConfig.feature_selection_method;
+    
+    % --- THIS IS THE NEW, CRITICAL LINE TO ADD ---
+    modelStruct.pipelineName = pipelineConfig.name;
+
     modelStruct.selectedFeatureIndices = selectedIdx;
     modelStruct.selectedWavenumbers = selectedWn;
     modelStruct.originalWavenumbers = wn;
