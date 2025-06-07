@@ -3,6 +3,8 @@
 % Helper function to perform inner cross-validation for hyperparameter tuning.
 % Date: 2025-05-15 (Updated with fscmrmr fix)
 
+
+
 function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
     pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
@@ -20,11 +22,6 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             if ismember('fisherFeaturePercent', pipelineConfig.hyperparameters_to_tune)
                 paramGridCells{end+1} = pipelineConfig.fisherFeaturePercent_range(:)';
                 paramNames{end+1} = 'fisherFeaturePercent';
-            elseif ismember('numFisherFeatures', pipelineConfig.hyperparameters_to_tune)
-                % Backwards compatibility with older configs that tune a fixed
-                % number of Fisher features instead of a percentage
-                paramGridCells{end+1} = pipelineConfig.numFisherFeatures_range(:)';
-                paramNames{end+1} = 'numFisherFeatures';
             end
         case 'pca'
             if ismember('pcaVarianceToExplain', pipelineConfig.hyperparameters_to_tune)
@@ -172,17 +169,18 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             switch lower(pipelineConfig.feature_selection_method)
                 case 'fisher'
+                    % --- FIX STARTS HERE ---
+                    % This block is simplified to only use 'fisherFeaturePercent', which is what
+                    % the calling script run_phase2_model_selection_comparative.m provides.
                     if isfield(currentHyperparams, 'fisherFeaturePercent')
                         numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
-                    elseif isfield(currentHyperparams, 'numFisherFeatures')
-                        warning('perform_inner_cv:deprecatedField', ...
-                            ['numFisherFeatures is deprecated. Please update the pipeline to use ', ...
-                             'fisherFeaturePercent instead.']);
-                        numFeat = currentHyperparams.numFisherFeatures;
                     else
+                        % If fisherFeaturePercent is not specified for some reason, default to using all features.
                         numFeat = size(X_train_p,2);
                     end
                     numFeat = min(numFeat, size(X_train_p,2));
+                    % --- FIX ENDS HERE ---
+                    
                     if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2
                         fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold);
                         [~, sorted_idx_inner] = sort(fisherRatios_inner, 'descend', 'MissingPlacement','last');
@@ -213,21 +211,15 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                 case 'mrmr'
                     numFeat = ceil(currentHyperparams.mrmrFeaturePercent * size(X_train_p,2));
                     numFeat = min(numFeat, size(X_train_p,2));
-                    % --- Keep your DEBUG fprintf lines if desired ---
-                    % fprintf('DEBUG MRMR (perform_inner_cv): size(X_train_p) = [%d, %d], class = %s\n', size(X_train_p,1), size(X_train_p,2), class(X_train_p));
-                    % fprintf('DEBUG MRMR (perform_inner_cv): size(y_train_fold_cat) = [%d, %d], class = %s\n', size(y_train_fold_cat,1), size(y_train_fold_cat,2), class(y_train_fold_cat));
-                    % fprintf('DEBUG MRMR (perform_inner_cv): numFeat (target) = %f, class = %s\n', numFeat, class(numFeat));
 
                     if numFeat <=0 || size(X_train_p,2) == 0 
-                        % fprintf('DEBUG MRMR (perform_inner_cv): numFeat is %d or no features in X. Using all available features for this inner fold.\n', numFeat);
                         selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
                     elseif ~(size(X_train_p,1)>1 && length(unique(y_train_fold))==2 && exist('fscmrmr','file'))
-                        % Conditions for fscmrmr not met (e.g. not enough samples, or only one class)
-                        selectedFcIdx_in_current_w = 1:size(X_train_p,2); % Fallback to all
+                        selectedFcIdx_in_current_w = 1:size(X_train_p,2);
                     else
                         try
                             y_train_fold_cat = categorical(y_train_fold);
-                            if size(X_train_p,2) == 0 % No features in input X
+                            if size(X_train_p,2) == 0 
                                 selectedFcIdx_in_current_w = []; 
                             else
                                 [ranked_indices_inner, ~] = fscmrmr(X_train_p, y_train_fold_cat); 
@@ -324,8 +316,8 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     if isempty(fieldnames(bestHyperparams)) && ~isempty(hyperparamCombinations) 
         bestHyperparams = hyperparamCombinations{1}; 
         for iMet=1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
-        if isfield(bestOverallPerfMetrics, priorityMetricName) && ~isempty(f2_idx_in_metrics) % check f2_idx_in_metrics also
-             bestOverallPerfMetrics.(metricNames{f2_idx_in_metrics}) = -Inf; % Ensure it doesn't look like a good result if all failed
+        if isfield(bestOverallPerfMetrics, priorityMetricName) && ~isempty(f2_idx_in_metrics) 
+             bestOverallPerfMetrics.(metricNames{f2_idx_in_metrics}) = -Inf; 
         end
     end
 end
