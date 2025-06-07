@@ -1,744 +1,128 @@
 % run_visualize_project_results.m
 %
-% Script to generate key visualizations for Phase 2, 3, and 4 of the
-% meningioma FT-IR classification project.
+% Script to generate key visualizations for the meningioma FT-IR project.
+% MODIFIED to identify the best pipeline from Phase 3 and generate a
+% detailed spider plot comparing its CV vs. Test Set performance.
 %
-% Date: 2025-05-18 (Spider plot styling: no main fill, increased tile spacing, label offset)
+% Date: 2025-06-07
 
 %% 0. Initialization
 fprintf('GENERATING PROJECT VISUALIZATIONS (Phases 2-4) - %s\n', string(datetime('now')));
 clear; clc; close all;
 
-% --- Define Paths ---
-currentScriptPath = fileparts(mfilename('fullpath')); 
-projectRoot = fileparts(fileparts(currentScriptPath)); 
-fprintf('INFO: Project root assumed to be: %s\n', projectRoot);
-
-resultsPath_main = fullfile(projectRoot, 'results');
-comparisonResultsPath_P2 = fullfile(resultsPath_main, 'OutlierStrategyComparison'); 
-
-resultsPath_P3 = fullfile(resultsPath_main, 'Phase3');
-resultsPath_P4 = fullfile(resultsPath_main, 'Phase4');
-modelsPath_P3 = fullfile(projectRoot, 'models', 'Phase3');
-
-figuresPath_output = fullfile(projectRoot, 'figures', 'ProjectSummaryFigures'); 
+% --- Configuration & Paths ---
+cfg = configure_cfg(); % Use helper to get project root and default strategy
+P = setup_project_paths(cfg.projectRoot); % Use helper to get all paths
+figuresPath_output = fullfile(P.figuresPath, 'ProjectSummaryFigures');
 if ~isfolder(figuresPath_output), mkdir(figuresPath_output); end
-
-comparisonFiguresPath = fullfile(projectRoot, 'figures', 'OutlierStrategyComparison_Plots_From_VisualizeScript');
-if ~isfolder(comparisonFiguresPath), mkdir(comparisonFiguresPath); end
-
 dateStrForFilenames = string(datetime('now','Format','yyyyMMdd'));
 
-plottingHelpersPath = fullfile(projectRoot, 'plotting'); 
-if exist(plottingHelpersPath, 'dir')
-    addpath(plottingHelpersPath);
-    fprintf('Added to path: %s\n', plottingHelpersPath);
-else
-    warning('Plotting helpers path not found: %s. Ensure spider_plot_R2019b.m is on the MATLAB path or in this directory.', plottingHelpersPath);
-end
-
-% Verify spider plot function dependency
+% Add plotting helpers to path
+if exist(P.helperFunPath, 'dir'), addpath(P.helperFunPath); end
+if exist(fullfile(P.projectRoot, 'plotting'), 'dir'), addpath(fullfile(P.projectRoot, 'plotting')); end
 if exist('spider_plot_R2019b', 'file') ~= 2
-    error(['Required plotting helper "spider_plot_R2019b.m" is missing from the MATLAB path.', newline, ...
-        'Download it from MATLAB Central File Exchange: ', ...
-        'https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot']);
+    error('Required plotting helper "spider_plot_R2019b.m" is missing from the MATLAB path.');
 end
 
-% Plotting Defaults
-plotFontSize = 10; 
-colorStrategyOR = [0.5, 0, 0.5];    % Purple for OR line
-colorStrategyAND = [0, 0.5, 0.5];   % Teal for AND line
-colorStdDevShadeOR = [0.8, 0.65, 0.8]; % Lighter Purple for OR shade
-colorStdDevShadeAND = [0.6, 0.8, 0.8]; % Lighter Teal for AND shade
-colorWHO1 = [0.9, 0.6, 0.4]; 
-colorWHO3 = [0.4, 0.702, 0.902]; 
+% --- Plotting Defaults ---
+colorCV = [0.2 0.6 0.2]; % Green for CV
+colorTest = [0.8 0.2 0.2]; % Red for Test
 
-colorTestSet = [0.2 0.6 0.2]; 
-P2_data_loaded_successfully = false; 
+%% 1. Load Phase 2 and Phase 3 Results to Find Best Pipeline
+fprintf('\n--- 1. Loading Phase 2 & 3 Results to Identify Best Pipeline ---\n');
 
-%% 1. Load Phase 2 Results (Comparison of Outlier Strategies)
-% ... (This section remains the same as your working version) ...
-fprintf('\n--- 1. Loading Phase 2 Comparison Results ---\n');
-overallResultsFiles_P2 = dir(fullfile(comparisonResultsPath_P2, '*_Phase2_OverallComparisonData.mat'));
-if isempty(overallResultsFiles_P2)
-    overallResultsFiles_P2 = dir(fullfile(resultsPath_main, '*_Phase2_OverallComparisonData.mat')); 
+% --- Load Phase 3 Results to find the name and test performance of the best model ---
+strategy = cfg.outlierStrategy;
+p3_results_files = dir(fullfile(P.resultsPath, 'Phase3', sprintf('*_Phase3_ComparisonResults_Strat_%s.mat', strategy)));
+if isempty(p3_results_files)
+    error('No Phase 3 results file found for strategy %s. Run Phase 3 first.', strategy);
 end
+[~,idxSortP3] = sort([p3_results_files.datenum],'descend');
+latest_p3_results_file = fullfile(p3_results_files(idxSortP3(1)).folder, p3_results_files(idxSortP3(1)).name);
+fprintf('Loading Phase 3 results from: %s\n', latest_p3_results_file);
+p3_data = load(latest_p3_results_file, 'bestModelInfo');
+bestPipelineName = p3_data.bestModelInfo.name;
+bestPipelineTestMetrics = p3_data.bestModelInfo.metrics;
+fprintf('== Best pipeline identified from Phase 3: %s ==\n', bestPipelineName);
 
-if isempty(overallResultsFiles_P2)
-    error('No "*_Phase2_OverallComparisonData.mat" file found in %s or %s.', comparisonResultsPath_P2, resultsPath_main);
+% --- Load Phase 2 Results to get the CV performance for this specific pipeline ---
+p2_results_files = dir(fullfile(P.resultsPath, 'Phase2', sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat', strategy)));
+if isempty(p2_results_files)
+    error('No Phase 2 results file found for strategy %s. Run Phase 2 first.', strategy);
 end
+[~,idxSortP2] = sort([p2_results_files.datenum],'descend');
+latest_p2_results_file = fullfile(p2_results_files(idxSortP2(1)).folder, p2_results_files(idxSortP2(1)).name);
+fprintf('Loading Phase 2 results from: %s\n', latest_p2_results_file);
+p2_data = load(latest_p2_results_file, 'currentStrategyPipelinesResults', 'pipelines', 'metricNames');
 
-[~,idxSort_P2] = sort([overallResultsFiles_P2.datenum],'descend');
-latestOverallResultFile_P2 = fullfile(overallResultsFiles_P2(idxSort_P2(1)).folder, overallResultsFiles_P2(idxSort_P2(1)).name);
-fprintf('Loading Phase 2 overall comparison results from: %s\n', latestOverallResultFile_P2);
-
-try
-    loadedData_P2 = load(latestOverallResultFile_P2, 'overallComparisonResults');
-    overallComparisonResults_P2 = loadedData_P2.overallComparisonResults;
-    
-    if isfield(overallComparisonResults_P2, 'Strategy_OR') && ...
-       isfield(overallComparisonResults_P2.Strategy_OR, 'allPipelinesResults') && ...
-       isfield(overallComparisonResults_P2, 'Strategy_AND') && ...
-       isfield(overallComparisonResults_P2.Strategy_AND, 'allPipelinesResults') && ...
-       isfield(overallComparisonResults_P2, 'pipelines') && ...
-       isfield(overallComparisonResults_P2, 'metricNames')
-
-        pipelines_P2 = overallComparisonResults_P2.pipelines;
-        metricNames_P2 = overallComparisonResults_P2.metricNames;
-        numPipelines_P2 = length(pipelines_P2);
-        pipelineNamesList_P2 = cell(numPipelines_P2, 1);
-        for i=1:numPipelines_P2, pipelineNamesList_P2{i} = pipelines_P2{i}.name; end
-        
-        P2_data_loaded_successfully = true; 
-        fprintf('Phase 2 data loaded successfully for %d pipelines.\n', numPipelines_P2);
-    else
-        P2_data_loaded_successfully = false; 
-        error('Phase 2 overallComparisonResults not loaded completely or in expected format from: %s', latestOverallResultFile_P2);
+bestPipelineCVMetrics = [];
+for i = 1:length(p2_data.pipelines)
+    if strcmpi(p2_data.pipelines{i}.name, bestPipelineName)
+        bestPipelineCVMetrics = p2_data.currentStrategyPipelinesResults{i}.outerFoldMetrics_mean;
+        break;
     end
-catch ME_P2
-    P2_data_loaded_successfully = false; 
-    fprintf('ERROR loading Phase 2 overallComparisonResults: %s\n', ME_P2.message);
-    rethrow(ME_P2);
+end
+if isempty(bestPipelineCVMetrics)
+    error('Could not find CV metrics for the best pipeline (%s) in the Phase 2 results file.', bestPipelineName);
 end
 
+%% 2. Generate Performance Profile Spider Plot for the Best Pipeline
+fprintf('\n--- 2. Generating Performance Profile Spider Plot for %s ---\n', bestPipelineName);
 
-%% 2. Generate Phase 2 Visualizations
-fprintf('\n--- 2. Generating Phase 2 Visualizations ---\n');
+% --- Prepare Data for Spider Plot ---
+spider_metrics_to_plot = {'Accuracy', 'Sensitivity_WHO3', 'Specificity_WHO1', 'PPV_WHO3', 'F1_WHO3', 'AUC'};
+spider_axes_labels = strrep(spider_metrics_to_plot, '_', ' ');
 
-if P2_data_loaded_successfully
-    f2_idx_p2 = find(strcmpi(metricNames_P2, 'F2_WHO3'));
-    auc_idx_p2 = find(strcmpi(metricNames_P2, 'AUC'));
+P_spider = zeros(2, length(spider_metrics_to_plot)); % 2 rows: CV, Test
+metricNames_p2 = p2_data.metricNames;
 
-    mean_F2_OR = NaN(numPipelines_P2,1); std_F2_OR = NaN(numPipelines_P2,1);
-    mean_AUC_OR = NaN(numPipelines_P2,1); std_AUC_OR = NaN(numPipelines_P2,1);
-    mean_F2_AND = NaN(numPipelines_P2,1); std_F2_AND = NaN(numPipelines_P2,1);
-    mean_AUC_AND = NaN(numPipelines_P2,1); std_AUC_AND = NaN(numPipelines_P2,1);
-
-    for p = 1:numPipelines_P2
-        if isfield(overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}, 'outerFoldMetrics_mean')
-            mean_F2_OR(p) = overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_mean(f2_idx_p2);
-            std_F2_OR(p)  = overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_std(f2_idx_p2);
-            mean_AUC_OR(p)= overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_mean(auc_idx_p2);
-            std_AUC_OR(p) = overallComparisonResults_P2.Strategy_OR.allPipelinesResults{p}.outerFoldMetrics_std(auc_idx_p2);
-        end
-        if isfield(overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}, 'outerFoldMetrics_mean')
-            mean_F2_AND(p) = overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_mean(f2_idx_p2);
-            std_F2_AND(p)  = overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_std(f2_idx_p2);
-            mean_AUC_AND(p)= overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_mean(auc_idx_p2);
-            std_AUC_AND(p) = overallComparisonResults_P2.Strategy_AND.allPipelinesResults{p}.outerFoldMetrics_std(auc_idx_p2);
-        end
+for i = 1:length(spider_metrics_to_plot)
+    metric_name = spider_metrics_to_plot{i};
+    
+    % Get CV metric value
+    cv_metric_idx = find(strcmpi(metricNames_p2, metric_name));
+    if ~isempty(cv_metric_idx)
+        P_spider(1, i) = bestPipelineCVMetrics(cv_metric_idx);
     end
     
-    strategyBarColors = struct('OR', colorStrategyOR, 'AND', colorStrategyAND);
-
-    makeBarChart(mean_F2_OR, [], std_F2_OR, [], pipelineNamesList_P2, 'F2_WHO3', ...
-                 'Mean F2-WHO3 (OR Strategy)', 'Mean F2-Score', 'P2_F2_OR_Strategy', ...
-                 comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
-    makeBarChart(mean_F2_AND, [], std_F2_AND, [], pipelineNamesList_P2, 'F2_WHO3', ...
-                 'Mean F2-WHO3 (AND Strategy)', 'Mean F2-Score', 'P2_F2_AND_Strategy', ...
-                 comparisonFiguresPath, dateStrForFilenames, struct('OR', colorStrategyAND)); 
-    makeBarChart(mean_F2_OR, mean_F2_AND, std_F2_OR, std_F2_AND, pipelineNamesList_P2, 'F2_WHO3', ...
-                 'Combined Mean F2-WHO3 (OR vs AND Strategy)', 'Mean F2-Score', 'P2_F2_CombinedStrategies', ...
-                 comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
-    makeBarChart(mean_AUC_OR, [], std_AUC_OR, [], pipelineNamesList_P2, 'AUC', ...
-                 'Mean AUC (OR Strategy)', 'Mean AUC', 'P2_AUC_OR_Strategy', ...
-                 comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
-    makeBarChart(mean_AUC_AND, [], std_AUC_AND, [], pipelineNamesList_P2, 'AUC', ...
-                 'Mean AUC (AND Strategy)', 'Mean AUC', 'P2_AUC_AND_Strategy', ...
-                 comparisonFiguresPath, dateStrForFilenames, struct('OR', colorStrategyAND));
-    makeBarChart(mean_AUC_OR, mean_AUC_AND, std_AUC_OR, std_AUC_AND, pipelineNamesList_P2, 'AUC', ...
-                 'Combined Mean AUC (OR vs AND Strategy)', 'Mean AUC', 'P2_AUC_CombinedStrategies', ...
-                 comparisonFiguresPath, dateStrForFilenames, strategyBarColors);
-else
-    fprintf('Skipping Phase 2 Bar Chart generation as P2_data_loaded_successfully is false.\n');
-end
-
-% --- Tiled Spider Plots ---
-if P2_data_loaded_successfully && ...
-   exist('mean_AUC_OR', 'var') && exist('mean_F2_OR', 'var') && ... 
-   ~isempty(mean_AUC_OR) && ~isempty(mean_F2_OR) 
-
-    spiderPlotLineColors = struct('OR', colorStrategyOR, 'AND', colorStrategyAND);
-    spiderPlotShadeColors = struct('OR', colorStdDevShadeOR, 'AND', colorStdDevShadeAND);
-
-    % AUC Spider Plot (0.6 to 1.0)
-    aucSpiderAxesLimits = repmat([0.6; 1.0], 1, numPipelines_P2);
-    aucSpiderAxesInterval = 4; 
-    makeTiledSpiderPlot(mean_AUC_OR, std_AUC_OR, mean_AUC_AND, std_AUC_AND, ...
-                        pipelineNamesList_P2, 'Mean AUC', aucSpiderAxesLimits, aucSpiderAxesInterval, ...
-                        'AUC_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotLineColors, spiderPlotShadeColors, plotFontSize);
-
-    % F2-WHO3 Spider Plot (0.6 to 1.0)
-    f2SpiderAxesLimits = repmat([0.6; 1.0], 1, numPipelines_P2);
-    f2SpiderAxesInterval = 4; 
-    makeTiledSpiderPlot(mean_F2_OR, std_F2_OR, mean_F2_AND, std_F2_AND, ...
-                        pipelineNamesList_P2, 'Mean F2-WHO3', f2SpiderAxesLimits, f2SpiderAxesInterval, ...
-                        'F2_Pipelines', comparisonFiguresPath, dateStrForFilenames, spiderPlotLineColors, spiderPlotShadeColors, plotFontSize);
-else
-    fprintf('Data for Tiled Spider Plots not fully available. Skipping these plots.\n');
-    if ~(exist('P2_data_loaded_successfully', 'var') && P2_data_loaded_successfully)
-         fprintf('Reason: Phase 2 data was not successfully loaded or initialized.\n');
-    else
-         fprintf('Reason: One or more required metric arrays (mean_AUC_OR, mean_F2_OR etc.) are missing or empty.\n');
+    % Get Test metric value
+    if isfield(bestPipelineTestMetrics, metric_name)
+        P_spider(2, i) = bestPipelineTestMetrics.(metric_name);
     end
 end
 
+% --- Create Spider Plot ---
+figSpider = figure('Name', ['Performance Profile: ' bestPipelineName], 'Position', [100, 100, 700, 600]);
+axesLimitsSpider = repmat([0.5; 1.0], 1, length(spider_metrics_to_plot)); % Scale from 0.5 to 1.0
 
-%% 3. Load Phase 3 Results 
-% ... (This section remains unchanged) ...
-fprintf('\n--- 3. Loading Phase 3 Results ---\n');
-P3_data_loaded = false; 
-P3_probe_data_loaded = false; 
-finalModelPackage = []; 
+spider_plot_R2019b(P_spider, ...
+    'AxesLabels', spider_axes_labels, ...
+    'AxesLimits', axesLimitsSpider, ...
+    'AxesInterval', 5, ...
+    'AxesPrecision', 2, ...
+    'FillOption', 'on', ...
+    'FillTransparency', [0.2, 0.1], ...
+    'Color', [colorCV; colorTest], ...
+    'LineWidth', 2.5, ...
+    'Marker', {'o', 's'}, ...
+    'MarkerSize', 80);
 
-finalModelFiles = dir(fullfile(modelsPath_P3, '*_Phase3_FinalMRMRLDA_Model.mat'));
-if isempty(finalModelFiles)
-    fprintf('No final Phase 3 model file found. Skipping Phase 3 spectrum-level visualizations.\n');
-else
-    [~,idxSort_P3M] = sort([finalModelFiles.datenum],'descend');
-    latestFinalModelFile = fullfile(modelsPath_P3, finalModelFiles(idxSort_P3M(1)).name);
-    fprintf('Loading final model package from: %s\n', latestFinalModelFile);
-    try
-        loaded_P3_model_package = load(latestFinalModelFile, 'finalModelPackage');
-        finalModelPackage = loaded_P3_model_package.finalModelPackage; 
-        P3_test_performance_spectrum = finalModelPackage.testSetPerformance; 
-        P3_data_loaded = true;
-    catch ME_P3M
-        fprintf('ERROR loading final model package: %s. Skipping Phase 3 spectrum-level viz.\n', ME_P3M.message);
-    end
-end
+title({sprintf('Performance Profile: %s Pipeline', bestPipelineName); ...
+       sprintf('(Outlier Strategy: %s)', strategy)}, ...
+      'FontSize', 14, 'FontWeight', 'normal');
+      
+legend({'Mean Cross-Validation', 'Final Test Set'}, 'Location', 'southoutside', 'FontSize', 12);
 
-probeResultsFiles_P3 = dir(fullfile(resultsPath_P3, '*_Phase3_ProbeLevelTestSetResults.mat'));
-if isempty(probeResultsFiles_P3)
-    fprintf('No Phase 3 probe-level results file found. Skipping Phase 3 probe-level visualizations.\n');
-else
-    [~,idxSort_P3P] = sort([probeResultsFiles_P3.datenum],'descend');
-    latestProbeResultFile = fullfile(resultsPath_P3, probeResultsFiles_P3(idxSort_P3P(1)).name);
-    fprintf('Loading Phase 3 probe-level results from: %s\n', latestProbeResultFile);
-    try
-        load(latestProbeResultFile, 'probeLevelResults', 'probeLevelPerfMetrics');
-        P3_probe_performance = probeLevelPerfMetrics;
-        P3_dataTable_probes_with_scores = probeLevelResults; 
-        P3_probe_data_loaded = true;
-    catch ME_P3P
-         fprintf('ERROR loading Phase 3 probe-level results: %s. Skipping Phase 3 probe-level viz.\n', ME_P3P.message);
-    end
-end
-
-%% 4. Generate Phase 3 Visualizations
-% ... (This section remains unchanged) ...
-fprintf('\n--- 4. Generating Phase 3 Visualizations ---\n');
-if P3_data_loaded
-    figP3SpecMetrics = figure('Name', 'Phase 3 Final Model - Test Set Performance (Spectrum-Level)');
-    uitable(figP3SpecMetrics, 'Data', struct2cell(P3_test_performance_spectrum)', ...
-            'ColumnName', fieldnames(P3_test_performance_spectrum), ...
-            'RowName', {'Value'}, 'Units', 'Normalized', 'Position', [0.1 0.1 0.8 0.8]);
-    title('Final Model Test Set Performance (Spectrum-Level)');
-    metricsTableP3SpecFilename = fullfile(figuresPath_output, sprintf('%s_P3_TestSetPerformance_SpectrumLevel_Table.tiff', dateStrForFilenames));
-    exportgraphics(figP3SpecMetrics, metricsTableP3SpecFilename, 'Resolution', 150);
-    fprintf('Phase 3 Spectrum-Level Performance Table saved to: %s\n', metricsTableP3SpecFilename);
-    close(figP3SpecMetrics);
-end
-
-if P3_probe_data_loaded
-    y_true_probe = P3_dataTable_probes_with_scores.True_WHO_Grade_Numeric;
-    y_pred_probe_mean_prob = P3_dataTable_probes_with_scores.Predicted_WHO_Grade_Numeric_MeanProb; 
-    
-    if ~isempty(y_true_probe) && ~isempty(y_pred_probe_mean_prob) && length(unique(y_true_probe(~isnan(y_true_probe)))) > 1
-        figP3ConfMatProbe = figure('Name', 'Phase 3 - Confusion Matrix (Probe-Level)');
-        cm_probe = confusionchart(y_true_probe, y_pred_probe_mean_prob, ...
-            'ColumnSummary','column-normalized', 'RowSummary','row-normalized', ...
-            'Title', sprintf('Probe-Level Confusion Matrix (Mean Prob > 0.5, F2: %.3f)', P3_probe_performance.F2_WHO3));
-        confMatP3ProbeFilename = fullfile(figuresPath_output, sprintf('%s_P3_ConfusionMatrix_ProbeLevel.tiff', dateStrForFilenames));
-        exportgraphics(figP3ConfMatProbe, confMatP3ProbeFilename, 'Resolution', 300);
-        savefig(figP3ConfMatProbe, strrep(confMatP3ProbeFilename, '.tiff','.fig'));
-        fprintf('Phase 3 Probe-Level Confusion Matrix saved to: %s\n', confMatP3ProbeFilename);
-        close(figP3ConfMatProbe);
-    else
-        fprintf('Skipping Phase 3 Probe-Level Confusion Matrix: Not enough data or classes.\n');
-    end
-
-    figP3ProbDist = figure('Name', 'Phase 3 - Probe-Level Mean WHO-3 Probabilities (Test Set)', 'Position', [100, 100, 900, 700]);
-    hold on; jitterAmount = 0.02; 
-    probes_true_who1 = P3_dataTable_probes_with_scores(P3_dataTable_probes_with_scores.True_WHO_Grade_Numeric == 1, :);
-    probes_true_who3 = P3_dataTable_probes_with_scores(P3_dataTable_probes_with_scores.True_WHO_Grade_Numeric == 3, :);
-    h_p3_1 = []; h_p3_3 = [];
-    if ~isempty(probes_true_who1)
-        x_coords_who1 = 1 + (rand(height(probes_true_who1),1) - 0.5) * jitterAmount * 2;
-        h_p3_1 = scatter(x_coords_who1, probes_true_who1.Mean_WHO3_Probability, 70, 'o', 'MarkerEdgeColor','k','MarkerFaceColor',colorWHO1,'LineWidth',1,'DisplayName','True WHO-1 Probes');
-    end
-    if ~isempty(probes_true_who3)
-        x_coords_who3 = 2 + (rand(height(probes_true_who3),1) - 0.5) * jitterAmount * 2;
-        h_p3_3 = scatter(x_coords_who3, probes_true_who3.Mean_WHO3_Probability, 70, 's', 'MarkerEdgeColor','k','MarkerFaceColor',colorWHO3,'LineWidth',1,'DisplayName','True WHO-3 Probes');
-    end
-    plot([0.5 2.5], [0.5 0.5], 'k--', 'DisplayName', 'Decision Threshold (0.5)');
-    hold off; xticks([1 2]); xticklabels({'True WHO-1', 'True WHO-3'}); xlim([0.5 2.5]); ylim([0 1]);
-    ylabel('Mean Predicted Probability of WHO-3'); title('Probe-Level Classification Probabilities (Test Set)'); grid on;
-    if ~isempty(h_p3_1) || ~isempty(h_p3_3), legend([h_p3_1, h_p3_3], 'Location', 'best'); end; set(gca, 'FontSize', 12);
-    probDistP3Filename = fullfile(figuresPath_output, sprintf('%s_P3_ProbeLevelProbabilities.tiff', dateStrForFilenames));
-    exportgraphics(figP3ProbDist, probDistP3Filename, 'Resolution', 300);
-    savefig(figP3ProbDist, strrep(probDistP3Filename, '.tiff','.fig'));
-    fprintf('Phase 3 Probe-Level Probability Distribution saved to: %s\n', probDistP3Filename);
-    close(figP3ProbDist);
-end
-
-%% 5. Load Phase 4 Results
-% ... (This section remains unchanged) ...
-fprintf('\n--- 5. Loading Phase 4 Results ---\n');
-P4_data_loaded = false; 
-featureTableFileToLoad = '';
-featureTableFile_dated = fullfile(resultsPath_P4, sprintf('%s_Phase4_FeatureImportanceTable_WithPvalues.csv', dateStrForFilenames));
-altFeatureTableFiles = dir(fullfile(resultsPath_P4, '*_Phase4_FeatureImportanceTable_WithPvalues.csv'));
-if exist(featureTableFile_dated, 'file')
-    featureTableFileToLoad = featureTableFile_dated;
-elseif ~isempty(altFeatureTableFiles)
-    [~,idxSort_P4F] = sort([altFeatureTableFiles.datenum],'descend');
-    featureTableFileToLoad = fullfile(resultsPath_P4, altFeatureTableFiles(idxSort_P4F(1)).name);
-    fprintf('Note: Using latest available feature importance table: %s\n', featureTableFileToLoad);
-else
-     fprintf('Phase 4 feature importance table not found. Skipping Phase 4 visualizations.\n');
-end
-
-if ~isempty(featureTableFileToLoad)
-    try
-        P4_feature_importance_table = readtable(featureTableFileToLoad);
-        P4_data_loaded = true;
-        fprintf('Phase 4 Feature Importance Table loaded from: %s\n', featureTableFileToLoad);
-    catch ME_P4F
-        fprintf('ERROR loading Phase 4 feature importance table from %s: %s\n', featureTableFileToLoad, ME_P4F.message);
-    end
-end
-
-%% 6. Generate Phase 4 Visualizations
-% ... (This section remains unchanged) ...
-fprintf('\n--- 6. Generating Phase 4 Visualizations ---\n');
-if P4_data_loaded && P3_data_loaded && ~isempty(finalModelPackage)
-    figP4Coeff = figure('Name', 'Phase 4 - LDA Coefficient Spectrum', 'Position', [100, 100, 900, 600]);
-    if ismember('BinnedWavenumber_cm_neg1', P4_feature_importance_table.Properties.VariableNames) && ...
-       ismember('LDACoefficient', P4_feature_importance_table.Properties.VariableNames) && ...
-       isfield(finalModelPackage, 'binningFactor') 
-        
-        plot_wavenumbers_p4 = P4_feature_importance_table.BinnedWavenumber_cm_neg1;
-        plot_coeffs_p4 = P4_feature_importance_table.LDACoefficient;
-        [plot_wavenumbers_p4_sorted, sortIdx_p4] = sort(plot_wavenumbers_p4);
-        plot_coeffs_p4_sorted = plot_coeffs_p4(sortIdx_p4);
-
-        stem(plot_wavenumbers_p4_sorted, plot_coeffs_p4_sorted, 'filled', 'MarkerSize', 4);
-        hold on; plot(plot_wavenumbers_p4_sorted, zeros(size(plot_wavenumbers_p4_sorted)), 'k--'); hold off;
-        xlabel(sprintf('Binned Wavenumber (cm^{-1}) - Binning Factor %d', finalModelPackage.binningFactor)); 
-        ylabel('LDA Coefficient Value'); 
-        title({'LDA Coefficients for MRMR-Selected Features (WHO-1 vs WHO-3)'; 'Positive values indicate contribution towards WHO-3'},'FontWeight','Normal'); 
-        grid on; ax_p4c = gca; ax_p4c.XDir = 'reverse'; 
-        if ~isempty(plot_wavenumbers_p4_sorted), xlim([min(plot_wavenumbers_p4_sorted)-5 max(plot_wavenumbers_p4_sorted)+5]); else xlim([900 1800]); end 
-
-        ldaCoeffPlotP4Filename = fullfile(figuresPath_output, sprintf('%s_P4_LDACoeffSpectrum.tiff', dateStrForFilenames));
-        exportgraphics(figP4Coeff, ldaCoeffPlotP4Filename, 'Resolution', 300);
-        savefig(figP4Coeff, strrep(ldaCoeffPlotP4Filename, '.tiff','.fig'));
-        fprintf('Phase 4 LDA Coefficient Spectrum saved to: %s\n', ldaCoeffPlotP4Filename);
-    else
-        fprintf('Skipping LDA Coefficient plot: Required columns not in feature table or binningFactor missing from finalModelPackage.\n');
-    end
-    if isgraphics(figP4Coeff), close(figP4Coeff); end
-    
-    fprintf('Suggestion for Phase 4 Mean Spectra with Highlighted Features: This plot requires loading original training data (X_train_no_outliers, y_train_numeric_no_outliers) and original wavenumbers (wavenumbers_roi), applying the binning factor from finalModelPackage, then calculating mean spectra and highlighting features based on finalModelPackage.selectedWavenumbers and LDA coefficients. This logic is present in run_phase4_feature_interpretation.m (Section 4) and can be adapted or called as a function here if the data is made available to this script.\n');
-
-else
-    if ~P4_data_loaded, fprintf('Skipping Phase 4 visualizations: P4_feature_importance_table not loaded.\n'); end
-    if ~P3_data_loaded || isempty(finalModelPackage)
-        fprintf('Skipping Phase 4 visualizations: finalModelPackage from Phase 3 not loaded or empty (needed for binning factor context).\n'); 
-    end
-end
+spiderPlotFilenameBase = fullfile(figuresPath_output, sprintf('%s_P_Summary_SpiderPlot_%s', dateStrForFilenames, bestPipelineName));
+savefig(figSpider, [spiderPlotFilenameBase, '.fig']);
+exportgraphics(figSpider, [spiderPlotFilenameBase, '.tiff'], 'Resolution', 300);
+fprintf('Performance Profile spider plot saved to: %s\n', [spiderPlotFilenameBase, '.tiff']);
 
 
+%% 3. (Optional) Keep other summary plots as needed
+% You can still include the bar charts or other summary plots from your
+% original script here if you find them useful for context. For example, a
+% bar chart showing the CV performance of all pipelines can still be
+% valuable to justify why the "best" one was chosen.
 
-% ===== HELPER FUNCTION DEFINITIONS (MUST BE AT THE END OF THE SCRIPT FILE) =====
-
-function makeBarChart(dataOR, dataAND, stdOR, stdAND, pipelineNames, metricName, titleStr, yLabelStr, figNameSuffix, outputPath, datePrefix, strategyPlotColors)
-    fig = figure('Name', titleStr, 'Position', [100, 100, 1000, 600]);
-    if isempty(dataAND) 
-        bar_data = dataOR;
-        b = bar(bar_data);
-        hold on;
-        errorbar(1:length(dataOR), dataOR, stdOR, 'k.', 'HandleVisibility','off');
-        b(1).FaceColor = strategyPlotColors.OR;
-        legendTxt = {'T2 OR Q Strategy'};
-    else 
-        bar_data = [dataOR, dataAND];
-        b = bar(bar_data);
-        hold on;
-        numGroups = size(bar_data, 1);
-        numBarsPerGroup = size(bar_data, 2);
-        groupWidth = min(0.8, numBarsPerGroup/(numBarsPerGroup + 1.5));
-        for iBar = 1:numBarsPerGroup
-            x_centers = (1:numGroups) - groupWidth/2 + (2*iBar-1) * groupWidth / (2*numBarsPerGroup);
-            if iBar == 1, errorbar(x_centers, dataOR, stdOR, 'k.', 'HandleVisibility','off');
-            else, errorbar(x_centers, dataAND, stdAND, 'k.', 'HandleVisibility','off'); end
-        end
-        b(1).FaceColor = strategyPlotColors.OR; 
-        b(2).FaceColor = strategyPlotColors.AND; 
-        legendTxt = {'T2 OR Q Strategy', 'T2 AND Q Strategy (Consensus)'};
-    end
-    hold off;
-    xticks(1:length(pipelineNames)); xticklabels(pipelineNames); xtickangle(45);
-    ylabel(yLabelStr); title({titleStr; '(Error bars: +/-1 Std.Dev. outer CV scores)'}, 'FontWeight', 'normal');
-    legend(legendTxt, 'Location', 'NorthEastOutside'); grid on;
-    all_means = bar_data(~isnan(bar_data));
-    all_stds_or = stdOR(~isnan(stdOR) & ~isnan(dataOR));
-    all_stds_and = []; if ~isempty(dataAND), all_stds_and = stdAND(~isnan(stdAND) & ~isnan(dataAND)); end
-    max_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), max_vals_std = [max_vals_std; dataOR(~isnan(dataOR)) + all_stds_or]; end
-    if ~isempty(dataAND) && ~isempty(all_stds_and), max_vals_std = [max_vals_std; dataAND(~isnan(dataAND)) + all_stds_and]; end
-    if isempty(max_vals_std), max_vals_std = all_means; end; if isempty(max_vals_std), max_vals_std = 0.1; end
-    min_vals_std = []; if ~isempty(dataOR) && ~isempty(all_stds_or), min_vals_std = [min_vals_std; dataOR(~isnan(dataOR)) - all_stds_or]; end
-    if ~isempty(dataAND) && ~isempty(all_stds_and), min_vals_std = [min_vals_std; dataAND(~isnan(dataAND)) - all_stds_and]; end
-    if isempty(min_vals_std), min_vals_std = all_means; end; if isempty(min_vals_std), min_vals_std = 0; end
-    upper_y = max(max_vals_std(:),[],'omitnan'); lower_y = min(min_vals_std(:),[],'omitnan');
-    if isempty(upper_y)||isnan(upper_y),upper_y=0.1;end; if isempty(lower_y)||isnan(lower_y),lower_y=0;end
-    pad = (upper_y-lower_y)*0.1; if pad==0||isnan(pad),pad=0.05;end; final_y = [max(0,lower_y-pad),upper_y+pad];
-    if final_y(1)>=final_y(2),final_y=[0,max(0.1,final_y(2)+0.1)];end; ylim(final_y);
-    
-    filenameBase = fullfile(outputPath, sprintf('%s_BarChart_%s', datePrefix, figNameSuffix));
-    exportgraphics(fig, [filenameBase, '.tiff'], 'Resolution', 300);
-    savefig(fig, [filenameBase, '.fig']);
-    fprintf('Bar chart "%s" saved.\n', titleStr);
-    close(fig);
-end
-
-% Placed at the END of run_visualize_project_results.m
-function makeTiledSpiderPlot(mean_metric_OR, std_metric_OR, mean_metric_AND, std_metric_AND, ...
-                             pipelineNames, metricStr, axesLimits, axesInterval, figNameSuffix, ...
-                             outputPath, datePrefix, strategyColors, shadeColors, plotFontSize_arg)
-
-    if ~(exist('spider_plot_R2019b', 'file') || exist('spider_plot', 'file'))
-        fprintf('Spider plot function not found. Skipping %s spider plot.\n', metricStr);
-        return;
-    end
-
-    figSpider = figure('Name', sprintf('Spider Plots - %s per Pipeline by Strategy', metricStr), ...
-                       'Position', [100, 100, 1100, 550]); 
-    tl_spider = tiledlayout(1, 2, 'TileSpacing', 'loose', 'Padding', 'compact'); 
-    sgtitle(tl_spider, sprintf('%s Performance Comparison by Outlier Strategy', metricStr), 'FontSize', plotFontSize_arg+2, 'FontWeight','Normal'); 
-
-    spiderAxesLabels = pipelineNames'; 
-    axesLabelsOffset_val = 0.1; 
-    axesZoom_val = 0.7; % Reset zoom to default, as alignment might fix label issues. Adjust if still needed.
-
-    % Settings for the numerical tick labels (0.6-1.0)
-    axesTickFontColor = [0, 0, 0]; % Black for better visibility
-    axesTickHorzAlign = 'right';   % Shift numerical labels to the right of the axis line
-    axesTickVertAlign = 'middle';  % Keep them vertically centered on their web lines
-
-    % Plot for OR Strategy
-    ax_OR = nexttile(tl_spider);
-    P_OR = mean_metric_OR'; 
-    P_OR(isnan(P_OR)) = axesLimits(1); 
-    
-    lower_bound_OR = mean_metric_OR' - std_metric_OR';
-    upper_bound_OR = mean_metric_OR' + std_metric_OR';
-    lower_bound_OR = max(lower_bound_OR, axesLimits(1)); 
-    upper_bound_OR = min(upper_bound_OR, axesLimits(2));
-    shaded_limits_OR = {[lower_bound_OR; upper_bound_OR]}; 
-
-    try
-        if exist('spider_plot_R2019b', 'file')
-            spider_plot_R2019b(P_OR, ...
-                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesFontColor', axesTickFontColor, ...         % Updated tick label color
-                'AxesHorzAlign', axesTickHorzAlign, ...     % Added for tick label horizontal alignment
-                'AxesVertAlign', axesTickVertAlign, ...     % Added for tick label vertical alignment
-                'AxesFontSize', plotFontSize_arg-1, ...
-                'LabelFontSize', plotFontSize_arg, 'AxesLabelsOffset', axesLabelsOffset_val, ...
-                'AxesZoom', axesZoom_val, ... 
-                'FillOption', 'off', ... 
-                'Color', strategyColors.OR, 'LineWidth', 2, ...
-                'Marker', 'o', 'MarkerSize', 70, ...
-                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_OR, ... 
-                'AxesShadedColor', {shadeColors.OR}, 'AxesShadedTransparency', 0.2);
-        else 
-            spider_plot(P_OR, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one',...
-                'AxesFontColor', axesTickFontColor, ... % Updated
-                'AxesHorzAlign', axesTickHorzAlign, ... % Added
-                'AxesVertAlign', axesTickVertAlign, ... % Added
-                'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'AxesZoom', axesZoom_val, ... 
-                'FillOption', 'off', 'Color', strategyColors.OR, 'LineWidth', 2); 
-             warning('Using generic spider_plot.m for OR; std dev shading, zoom, and precise tick alignments might behave differently or not be supported as named options.');
-        end
-        title(ax_OR, 'T2 OR Q Strategy', 'FontWeight', 'Normal', 'FontSize', plotFontSize_arg); 
-    catch ME_spider_OR
-         fprintf('ERROR creating OR strategy spider plot for %s: %s\n', metricStr, ME_spider_OR.message);
-    end
-
-    % Plot for AND Strategy
-    ax_AND = nexttile(tl_spider);
-    P_AND = mean_metric_AND';
-    P_AND(isnan(P_AND)) = axesLimits(1);
-    
-    lower_bound_AND = mean_metric_AND' - std_metric_AND';
-    upper_bound_AND = mean_metric_AND' + std_metric_AND';
-    lower_bound_AND = max(lower_bound_AND, axesLimits(1));
-    upper_bound_AND = min(upper_bound_AND, axesLimits(2));
-    shaded_limits_AND = {[lower_bound_AND; upper_bound_AND]};
-
-    try
-        if exist('spider_plot_R2019b', 'file')
-            spider_plot_R2019b(P_AND, ...
-                'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesFontColor', axesTickFontColor, ...     % Updated tick label color
-                'AxesHorzAlign', axesTickHorzAlign, ... % Added for tick label horizontal alignment
-                'AxesVertAlign', axesTickVertAlign, ... % Added for tick label vertical alignment
-                'AxesFontSize', plotFontSize_arg-1, ...
-                'LabelFontSize', plotFontSize_arg, 'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'AxesZoom', axesZoom_val, ... 
-                'FillOption', 'off', ... 
-                'Color', strategyColors.AND, 'LineWidth', 2, ...
-                'Marker', 's', 'MarkerSize', 70, ...
-                'AxesShaded', 'on', 'AxesShadedLimits', shaded_limits_AND, ... 
-                'AxesShadedColor', {shadeColors.AND}, 'AxesShadedTransparency', 0.2);
-        else 
-            spider_plot(P_AND, 'AxesLabels', spiderAxesLabels, 'AxesLimits', axesLimits, ...
-                'AxesInterval', axesInterval, 'AxesPrecision', 2, 'AxesDisplay', 'one', ...
-                'AxesFontColor', axesTickFontColor, ... % Updated
-                'AxesHorzAlign', axesTickHorzAlign, ... % Added
-                'AxesVertAlign', axesTickVertAlign, ... % Added
-                'AxesLabelsOffset', axesLabelsOffset_val, ... 
-                'AxesZoom', axesZoom_val, ... 
-                'FillOption', 'off', 'Color', strategyColors.AND, 'LineWidth', 2); 
-            warning('Using generic spider_plot.m for AND; std dev shading, zoom, and precise tick alignments might behave differently or not be supported as named options.');
-        end
-        title(ax_AND, 'T2 AND Q Strategy (Consensus)', 'FontWeight', 'Normal','FontSize', plotFontSize_arg); 
-    catch ME_spider_AND
-        fprintf('ERROR creating AND strategy spider plot for %s: %s\n', metricStr, ME_spider_AND.message);
-    end
-    
-    filenameBase_Spider = fullfile(outputPath, sprintf('%s_P2_SpiderPlot_%s_TiledStrategies', datePrefix, figNameSuffix));
-    exportgraphics(figSpider, [filenameBase_Spider, '.tiff'], 'Resolution', 300);
-    savefig(figSpider, [filenameBase_Spider, '.fig']);
-    fprintf('Tiled spider plot for %s saved to: %s.(tiff/fig)\n', metricStr, filenameBase_Spider);
-    if isgraphics(figSpider), close(figSpider); end
-end
-
-
-
-
-
-function fh_cm = plotConfusionMatrix(trueLabels, predictedLabels, classNames, titleStr)
-% plotConfusionMatrix - Displays a confusion matrix.
-%
-% Inputs:
-%   trueLabels - Vector of true class labels (categorical, numeric, or logical).
-%   predictedLabels - Vector of predicted class labels.
-%   classNames - Cell array of strings for class names (optional, can be inferred if labels are categorical).
-%   titleStr - String for the plot title.
-%
-% Outputs:
-%   fh_cm - Figure handle for the confusion matrix plot.
-
-    if nargin < 4 || isempty(titleStr)
-        titleStr = 'Confusion Matrix';
-    end
-
-    fh_cm = figure;
-    cm = confusionchart(trueLabels, predictedLabels);
-    cm.Title = titleStr;
-
-    if nargin >= 3 && ~isempty(classNames)
-        try
-            cm.ClassNames = classNames;
-        catch ME
-            warning('Could not set ClassNames for confusion chart. Ensure labels are compatible or already categorical with these names. Error: %s', ME.message);
-        end
-    end
-    
-    % Optional: Add more customizations if needed
-    % cm.ColumnSummary = 'column-normalized';
-    % cm.RowSummary = 'row-normalized';
-    
-    fprintf('Confusion matrix plotted.\n');
-end
-
-% Example of how to call this function in your script:
-% % Assume results_data.trueLabels, results_data.predictedLabels are loaded
-% true_labels_for_cm = categorical(results_data.trueLabels, [0 1], {'WHO I', 'WHO III'}); % Example conversion
-% predicted_labels_for_cm = categorical(results_data.predictedLabels, [0 1], {'WHO I', 'WHO III'}); % Example conversion
-% myClassNames = {'WHO I', 'WHO III'};
-% plotConfusionMatrix(true_labels_for_cm, predicted_labels_for_cm, myClassNames, 'Confusion Matrix: My Model Test Set');
-
-function fh_roc_det = plotRocAndDetCurves(trueLabels, scores, positiveClassName, titleRocStr, titleDetStr, useNormalDeviateScaleDet)
-% plotRocAndDetCurves - Plots ROC and DET curves side-by-side.
-%
-% Inputs:
-%   trueLabels - Vector of true binary labels (e.g., 0/1, logical, or categorical with two classes).
-%   scores - Vector of scores or probabilities for the positive class.
-%   positiveClassName - The label of the positive class (e.g., 1, true, 'WHO III').
-%   titleRocStr - String for the ROC plot title.
-%   titleDetStr - String for the DET plot title.
-%   useNormalDeviateScaleDet - Logical, true to use normal deviate scale for DET axes (optional, default false).
-%
-% Outputs:
-%   fh_roc_det - Figure handle for the ROC and DET plots.
-
-    if nargin < 4 || isempty(titleRocStr)
-        titleRocStr = 'ROC Curve';
-    end
-    if nargin < 5 || isempty(titleDetStr)
-        titleDetStr = 'DET Curve';
-    end
-    if nargin < 6 || isempty(useNormalDeviateScaleDet)
-        useNormalDeviateScaleDet = false; % Default to linear scale for DET
-    end
-
-    % For ROC Curve
-    [Xroc, Yroc, ~, AUCroc] = perfcurve(trueLabels, scores, positiveClassName);
-
-    % For DET Curve (FNR vs FPR)
-    [Xdet_fpr, Ydet_fnr, ~] = perfcurve(trueLabels, scores, positiveClassName, ...
-                                       'XCrit', 'fpr', 'YCrit', 'fnr');
-
-    fh_roc_det = figure;
-    tiledlayout(1, 2);
-
-    % ROC Curve plot
-    ax_roc = nexttile;
-    plot(ax_roc, Xroc, Yroc, 'LineWidth', 1.5);
-    hold(ax_roc, 'on');
-    plot(ax_roc, [0 1], [0 1], 'k--'); % Diagonal line
-    hold(ax_roc, 'off');
-    xlabel(ax_roc, 'False Positive Rate (FPR)');
-    ylabel(ax_roc, 'True Positive Rate (TPR)');
-    title(ax_roc, sprintf('%s (AUC = %.3f)', titleRocStr, AUCroc));
-    grid(ax_roc, 'on');
-    axis(ax_roc, [0 1 0 1]); % Ensure axes are standard for ROC
-
-    % DET Curve plot
-    ax_det = nexttile;
-    if useNormalDeviateScaleDet
-        % Transform axes for DET curve (Normal Deviate Scale)
-        % Handle cases where rates are exactly 0 or 1 for norminv
-        epsilon = 1e-7; % Small value to avoid Inf with norminv
-        Xdet_fpr_norm = norminv(max(epsilon, min(1-epsilon, Xdet_fpr)));
-        Ydet_fnr_norm = norminv(max(epsilon, min(1-epsilon, Ydet_fnr)));
-        
-        plot(ax_det, Xdet_fpr_norm, Ydet_fnr_norm, 'LineWidth', 1.5);
-        xlabel(ax_det, 'FPR (Normal Deviate Scale)');
-        ylabel(ax_det, 'FNR (Normal Deviate Scale)');
-        title(ax_det, [titleDetStr, ' (Normal Deviate Scale)']);
-        
-        % Optional: Set custom tick labels to show original probabilities
-        prob_ticks = [0.001, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98, 0.99, 0.999];
-        norm_ticks = norminv(prob_ticks);
-        valid_ticks_x = norm_ticks(norm_ticks >= min(Xdet_fpr_norm) & norm_ticks <= max(Xdet_fpr_norm));
-        valid_ticks_y = norm_ticks(norm_ticks >= min(Ydet_fnr_norm) & norm_ticks <= max(Ydet_fnr_norm));
-        
-        if ~isempty(valid_ticks_x)
-            set(ax_det, 'XTick', valid_ticks_x, 'XTickLabel', sprintfc('%.3g', prob_ticks(ismember(norm_ticks, valid_ticks_x))));
-        end
-        if ~isempty(valid_ticks_y)
-            set(ax_det, 'YTick', valid_ticks_y, 'YTickLabel', sprintfc('%.3g', prob_ticks(ismember(norm_ticks, valid_ticks_y))));
-        end
-
-    else % Linear scale for DET
-        plot(ax_det, Xdet_fpr, Ydet_fnr, 'LineWidth', 1.5);
-        xlabel(ax_det, 'False Positive Rate (FPR)');
-        ylabel(ax_det, 'False Negative Rate (FNR)');
-        title(ax_det, titleDetStr);
-        axis(ax_det, [0 1 0 1]); % Ensure axes are standard if not transformed
-    end
-    grid(ax_det, 'on');
-    
-    fprintf('ROC and DET curves plotted.\n');
-end
-
-% Example of how to call this function:
-% % Assume results_data.trueTestLabels, results_data.predictedScoresTest are loaded
-% % 'trueTestLabels' could be numeric (0,1) or categorical
-% % 'predictedScoresTest' are scores for the positive class
-% positiveClass = 1; % Or 'WHO III' if using categorical labels
-% plotRocAndDetCurves(results_data.trueTestLabels, results_data.predictedScoresTest, positiveClass, ...
-%                     'ROC: My Model', 'DET: My Model', true); % Last arg true for normal deviate scale
-
-function fh_prob_dist = plotProbabilityDistribution(probeLevelProbabilities, trueProbeClasses, positiveClassName, titleBoxStr, titleDotStr)
-% plotProbabilityDistribution - Displays boxplot and dotplot of probe-level probabilities.
-%
-% Inputs:
-%   probeLevelProbabilities - Vector of mean prediction probabilities for the positive class for each probe.
-%   trueProbeClasses - Vector (categorical or numeric) of true class labels for each probe.
-%   positiveClassName - The name/value of the positive class (e.g., 'WHO III' or 1).
-%                       This is used to label the Y-axis appropriately.
-%   titleBoxStr - String for the boxplot title.
-%   titleDotStr - String for the dotplot title.
-%
-% Outputs:
-%   fh_prob_dist - Figure handle for the probability distribution plots.
-
-    if nargin < 4 || isempty(titleBoxStr)
-        titleBoxStr = 'Boxplot of Probe Probabilities';
-    end
-    if nargin < 5 || isempty(titleDotStr)
-        titleDotStr = 'Dotplot of Probe Probabilities';
-    end
-
-    fh_prob_dist = figure;
-    tiledlayout(1, 2);
-
-    yLabelStr = sprintf('Predicted Probability for %s', string(positiveClassName));
-
-    % Boxplot
-    ax_box = nexttile;
-    boxplot(ax_box, probeLevelProbabilities, trueProbeClasses); % 'Labels' will be taken from unique(trueProbeClasses)
-    ylabel(ax_box, yLabelStr);
-    title(ax_box, titleBoxStr);
-    grid(ax_box, 'on');
-    ylim(ax_box, [0 1]);
-
-    % Dotplot (Swarm Chart / Scatter Plot with Jitter)
-    ax_dot = nexttile;
-    
-    % Convert trueProbeClasses to categorical if it's not, for easier handling
-    if isnumeric(trueProbeClasses) || islogical(trueProbeClasses)
-        cats = unique(trueProbeClasses);
-        catNames = arrayfun(@num2str, cats, 'UniformOutput', false);
-        trueProbeClassesCat = categorical(trueProbeClasses, cats, catNames);
-    else
-        trueProbeClassesCat = categorical(trueProbeClasses);
-    end
-    
-    classNames = categories(trueProbeClassesCat);
-    numClasses = length(classNames);
-    colors = lines(numClasses); % Colors for each class
-
-    for i = 1:numClasses
-        currentClassCatName = classNames{i};
-        isCurrentClass = (trueProbeClassesCat == currentClassCatName);
-        
-        x_position = i;
-        y_values = probeLevelProbabilities(isCurrentClass);
-        
-        jitter_amount = 0.1;
-        x_jittered = x_position + jitter_amount * (rand(size(y_values)) - 0.5);
-        
-        scatter(ax_dot, x_jittered, y_values, 36, 'filled', 'MarkerFaceColor', colors(i,:), 'MarkerFaceAlpha', 0.7);
-        hold(ax_dot, 'on');
-    end
-    hold(ax_dot, 'off');
-    
-    xticks(ax_dot, 1:numClasses);
-    xticklabels(ax_dot, classNames);
-    ylabel(ax_dot, yLabelStr);
-    title(ax_dot, titleDotStr);
-    grid(ax_dot, 'on');
-    ylim(ax_dot, [0 1]);
-    
-    fprintf('Probability distribution plots created.\n');
-end
-
-% Example of how to call this function:
-% % Assume aggregated_results.meanProb_WHO_III_per_probe and aggregated_results.trueLabels_per_probe are loaded
-% % trueLabels_per_probe could be categorical {'WHO I', 'WHO III'} or numeric {0, 1}
-% plotProbabilityDistribution(aggregated_results.meanProb_WHO_III_per_probe, ...
-%                             aggregated_results.trueLabels_per_probe, ...
-%                             'WHO III', ... % Name of the positive class for Y-axis label
-%                             'Probe Probabilities (Boxplot)', ...
-%                             'Probe Probabilities (Dotplot)');
+fprintf('\n--- Visualization Script Finished ---\n');
