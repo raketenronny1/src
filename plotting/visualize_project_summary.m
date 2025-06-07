@@ -37,6 +37,7 @@ function visualize_project_summary(cfg, opts)
         error('No Phase 3 results file found for strategy %s. Run Phase 3 first.', strategy);
     end
     [~,idxSortP3] = sort([p3_files.datenum],'descend');
+
     p3_file = fullfile(p3_files(idxSortP3(1)).folder, p3_files(idxSortP3(1)).name);
     p3_loaded = load(p3_file, 'bestModelInfo');
     if ~isfield(p3_loaded,'bestModelInfo') || ~isstruct(p3_loaded.bestModelInfo)
@@ -49,6 +50,7 @@ function visualize_project_summary(cfg, opts)
         warning('Best pipeline name not found in Phase 3 results.');
         return
     end
+
 
     p2_files = dir(fullfile(P.resultsPath, 'Phase2', sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat', strategy)));
     if isempty(p2_files)
