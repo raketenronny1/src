@@ -8,7 +8,6 @@ This repository contains MATLAB code for analysing Fourier-transform infrared (F
 - `data_management/` – utilities to export file lists and intermediate results.
 - `helper_functions/` – refactored functions used throughout the pipeline.
 - `plotting/` – scripts for generating project figures.
-- `archive/` – older scripts retained for reference.
 - Top-level scripts such as `run_phase2_model_selection_comparative.m`, `run_phase3_final_evaluation.m` and `run_phase4_feature_interpretation.m` implement the main phases of the analysis.
 
 The project expects the following folders in the repository root when running the scripts:
