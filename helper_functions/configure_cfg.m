@@ -7,8 +7,8 @@ function cfg = configure_cfg(varargin)
 %
 %   Recognised fields:
 %     projectRoot                - repository root path
-%     outlierStrategy            - default outlier strategy ('AND')
-%     outlierStrategiesToCompare - cell array of strategies for Phase 2
+%     outlierStrategy            - placeholder for compatibility
+%     outlierStrategiesToCompare - placeholder array
 %
 %   Example:
 %       cfg = configure_cfg('projectRoot','/path/to/project', ...
@@ -40,11 +40,11 @@ function cfg = configure_cfg(varargin)
             cfg.projectRoot = pwd;
         end
     end
-    if ~isfield(cfg,'outlierStrategy') || isempty(cfg.outlierStrategy)
-        cfg.outlierStrategy = 'AND';
+    if ~isfield(cfg,'outlierStrategy')
+        cfg.outlierStrategy = 'default';
     end
-    if ~isfield(cfg,'outlierStrategiesToCompare') || isempty(cfg.outlierStrategiesToCompare)
-        cfg.outlierStrategiesToCompare = {'OR','AND'};
+    if ~isfield(cfg,'outlierStrategiesToCompare')
+        cfg.outlierStrategiesToCompare = {'default'};
     end
 end
 

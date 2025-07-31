@@ -35,7 +35,7 @@ controls the main scripts. It fills in sensible defaults for missing fields and
 accepts name/value pairs for overrides.
 
 ```matlab
-cfg = configure_cfg('outlierStrategy','OR');
+cfg = configure_cfg();
 run_phase3_final_evaluation(cfg);
 ```
 
@@ -52,11 +52,11 @@ run('src/import_preprocessing/run_ftir_data_preparation_pipeline.m')
 run('src/import_preprocessing/run_split_training_test.m')
 ```
 
-Optional scripts such as `run_outlier_detection_pca2.m` or `run_apply_consensus_outlier_strategy.m` help detect and remove outliers before model training.
+Run `import_preprocessing/run_classwise_outlier_processing.m` to identify outliers by PCA for each class, create a cleaned training set and save a full set of visualisations separately for WHO‑1 and WHO‑3.
 
 ### Phase 2 – Model and feature selection
 
-Run nested cross-validation and compare outlier strategies using:
+Run nested cross-validation using:
 The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
 
 ```matlab
@@ -71,11 +71,7 @@ Train the MRMR–LDA pipeline on the full training set and evaluate on the test 
 MRMR features are chosen based on a percentage of the binned spectrum rather than a fixed count.
 
 ```matlab
-% Default uses the "AND" consensus strategy
 run('src/run_phase3_final_evaluation.m')
-
-% To evaluate the alternative "OR" strategy
-run_phase3_final_evaluation(struct('outlierStrategy','OR'))
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
@@ -94,9 +90,7 @@ Outputs appear in `results/Phase4` and `figures/Phase4`.
 
 After completing Phases 2–4 you can summarise the pipeline outputs with
 `plotting/visualize_project_summary.m`. Running this script generates
-publication-ready plots under `figures/ProjectSummaryFigures` and creates bar
-charts comparing the consensus and OR outlier strategies in
-`figures/OutlierStrategyComparison_Plots_From_VisualizeScript`.
+publication-ready plots under `figures/ProjectSummaryFigures`.
 
 A helper menu `plotting/run_visualization_menu.m` lets you choose which figures to create. Other scripts that produce figures are:
 
@@ -105,12 +99,12 @@ A helper menu `plotting/run_visualization_menu.m` lets you choose which figures 
   `figures/Phase1_Dissertation_Plots`.
 - `plotting/visualize_binning_effects.m` – visualises the effect of
   different binning factors using
-  `data/training_set_no_outliers_T2Q.mat` and outputs to `figures/SideQuests`.
+`data/training_set_no_outliers.mat` and outputs to `figures/SideQuests`.
 - `plotting/visualize_outlier_exploration.m` – a function called from
-  `import_preprocessing/run_comprehensive_outlier_processing.m`.  It expects the
+  `import_preprocessing/run_classwise_outlier_processing.m`. It expects the
   spectra, labels, PCA results and a struct containing a
   `figuresPath_OutlierExploration` field and produces several exploratory plots
-  in that directory.
+  in that directory. The classwise script calls it once for WHO-1 and once for WHO-3.
 
 Example usage:
 

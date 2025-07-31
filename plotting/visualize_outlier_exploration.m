@@ -121,6 +121,42 @@ function visualize_outlier_exploration(input_X_spectra, ...
     savefig(fig4b,fullfile(figuresDir,sprintf('%s_VisFunc_Plot4b_PCA_Scores_OutlierCats.fig',datePrefix)));
     fprintf('Visualization Function: Plot 4b (PCA Scores Outlier Cats) saved.\n'); close(fig4b);
 
+    % --- NEW PLOT 4c: PCA Outlier Scatter Plots per WHO Grade ---
+    who_grades = [1, 3];
+    for g = 1:numel(who_grades)
+        grade_val = who_grades(g);
+        idx_grade = (y_numeric == grade_val);
+        if ~any(idx_grade), continue; end
+        fig4c = figure('Name',sprintf('PCA Outliers Grade %d',grade_val));
+        hold on; hdl4c = []; leg4c = {};
+        if any(is_normal & idx_grade)
+            colorNormal = colorWHO1;
+            if grade_val == 3, colorNormal = colorWHO3; end
+            hdl4c(end+1) = scatter(score(is_normal & idx_grade,1), score(is_normal & idx_grade, min(2,size(score,2))), 15, colorNormal, 'o','filled','MarkerFaceAlpha',0.3);
+            leg4c{end+1} = sprintf('WHO-%d Normal',grade_val);
+        end
+        if any(is_T2_only & idx_grade)
+            hdl4c(end+1) = scatter(score(is_T2_only & idx_grade,1), score(is_T2_only & idx_grade,min(2,size(score,2))),25,colorT2OutlierFlag,'s','MarkerFaceColor',colorT2OutlierFlag*0.7);
+            leg4c{end+1} = 'T2-only';
+        end
+        if any(is_Q_only & idx_grade)
+            hdl4c(end+1) = scatter(score(is_Q_only & idx_grade,1), score(is_Q_only & idx_grade,min(2,size(score,2))),25,colorQOutlierFlag,'d','MarkerFaceColor',colorQOutlierFlag*0.7);
+            leg4c{end+1} = 'Q-only';
+        end
+        if any(is_T2_and_Q & idx_grade)
+            hdl4c(end+1) = scatter(score(is_T2_and_Q & idx_grade,1), score(is_T2_and_Q & idx_grade,min(2,size(score,2))),30,colorBothOutlierFlag,'*');
+            leg4c{end+1} = 'T2&Q (Consensus)';
+        end
+        hold off;
+        xlabel(sprintf('PC1(%.1f%%)',explained(1))); ylabel(sprintf('PC2(%.1f%%)',explained(min(2,length(explained)))));
+        title(sprintf('PCA Scores with Outlier Categories - WHO-%d', grade_val),'FontWeight','normal','FontSize',plotFontSize-1);
+        if ~isempty(hdl4c), legend(hdl4c,leg4c,'Location','best','FontSize',plotFontSize-2); end
+        axis equal; grid on; set(gca,'FontSize',plotFontSize-1);
+        exportgraphics(fig4c,fullfile(figuresDir,sprintf('%s_VisFunc_Plot4c_PCA_Scores_WHO%d.tiff',datePrefix,grade_val)),'Resolution',300);
+        savefig(fig4c,fullfile(figuresDir,sprintf('%s_VisFunc_Plot4c_PCA_Scores_WHO%d.fig',datePrefix,grade_val)));
+        fprintf('Visualization Function: Plot 4c (PCA Scores WHO-%d) saved.\n',grade_val); close(fig4c);
+    end
+
     % PLOT 5: All PC Loadings (PC1 to k_model)
     num_pcs_for_loadings = k_model; % k_model is a local variable here
     if num_pcs_for_loadings > 0 && ~isempty(coeff) % coeff is local
