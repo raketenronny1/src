@@ -2,9 +2,9 @@ function run_phase3_final_evaluation(cfg)
 %RUN_PHASE3_FINAL_EVALUATION
 %
 % Apply each pipeline model saved in Phase 2 to the test data and compare
-% performance.  The script loads the models trained for the chosen outlier
-% strategy, evaluates them on the unseen test set and compares the results
-% with the cross‑validation metrics from Phase 2.
+% performance. Outlier removal is no longer performed so the script simply
+% loads the available Phase 2 models, evaluates them on the unseen test set
+% and compares the results with cross‑validation metrics.
 %
 % Date: 2025-06-10
 
@@ -13,8 +13,6 @@ if nargin < 1
     cfg = struct();
 end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
-if ~isfield(cfg,'outlierStrategy'); cfg.outlierStrategy = 'AND'; end
-strategy = upper(string(cfg.outlierStrategy));
 
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
@@ -48,21 +46,18 @@ y_test = vertcat(y_list{:});
 probeIDs_test = vertcat(probe_list{:});
 
 %% 2. Locate models and Phase2 results
-modelPattern = sprintf('*_Phase2_*_Model_Strat_%s.mat',strategy);
-modelFiles = dir(fullfile(modelsPathP2, modelPattern));
+modelFiles = dir(fullfile(modelsPathP2, '*_Phase2_*_Model.mat'));
 if isempty(modelFiles)
-    fullPattern = fullfile(modelsPathP2, modelPattern);
-    error('No Phase 2 models found for strategy %s. Expected files matching %s', ...
-        strategy, fullPattern);
+    error('No Phase 2 models found in %s.', modelsPathP2);
 end
-resFile = dir(fullfile(resultsPathP2,sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat',strategy)));
+resFile = dir(fullfile(resultsPathP2,'*_Phase2_AllPipelineResults.mat'));
 if isempty(resFile)
-    warning('Phase 2 results file not found for strategy %s',strategy);
+    warning('Phase 2 results file not found.');
     cvData = [];
 else
     [~,idx] = sort([resFile.datenum],'descend');
     tmp = load(fullfile(resFile(idx(1)).folder,resFile(idx(1)).name));
-    cvData = tmp.currentStrategyPipelinesResults;
+    cvData = tmp.resultsPerPipeline;
     pipelinesCV = tmp.pipelines;
     metricNames = tmp.metricNames;
 end
@@ -96,7 +91,7 @@ for i=1:numel(modelFiles)
     plot(Xroc,Yroc,'LineWidth',1.5); grid on;
     xlabel('False positive rate'); ylabel('True positive rate');
     title(sprintf('ROC - %s (AUC %.3f)',mdlName,AUC));
-    rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s.png',mdlName,strategy));
+    rocFile = fullfile(figuresPath,sprintf('ROC_%s.png',mdlName));
     saveas(fig,rocFile); close(fig);
     results(i).rocFile = rocFile;
 end
@@ -128,7 +123,7 @@ bestModelInfo = results(bestIdx);
 
 %% Save combined results
 dateStr = string(datetime('now','Format','yyyyMMdd'));
-resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ComparisonResults_Strat_%s.mat',dateStr,strategy));
+resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ComparisonResults.mat',dateStr));
 save(resultsFile,'results','bestModelInfo');
 fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
 

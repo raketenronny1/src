@@ -17,9 +17,6 @@ end
 if ~isfield(cfg, 'projectRoot')
     cfg.projectRoot = pwd;
 end
-if ~isfield(cfg, 'outlierStrategy')
-    cfg.outlierStrategy = 'AND'; % Default strategy
-end
 
 P = setup_project_paths(cfg.projectRoot); % Use helper
 dataPath = P.dataPath;
@@ -34,9 +31,9 @@ dateStr = string(datetime('now','Format','yyyyMMdd'));
 %% 1. Load Final Model Package from Phase 3
 % =========================================================================
 fprintf('Loading final model package from Phase 3...\n');
-compFiles = dir(fullfile(P.resultsPath, 'Phase3', sprintf('*_Phase3_ComparisonResults_Strat_%s.mat', cfg.outlierStrategy)));
+compFiles = dir(fullfile(P.resultsPath, 'Phase3', '*_Phase3_ComparisonResults.mat'));
 if isempty(compFiles)
-    error('No Phase 3 comparison results found for strategy "%s". Run Phase 3 first.', cfg.outlierStrategy);
+    error('No Phase 3 comparison results found. Run Phase 3 first.');
 end
 [~,idxSort] = sort([compFiles.datenum],'descend');
 latestComp = load(fullfile(compFiles(idxSort(1)).folder, compFiles(idxSort(1)).name),'bestModelInfo');
@@ -104,37 +101,20 @@ featureImportanceTable = table(...
 %% 2.5 Prepare Training Data for Visualization
 % =========================================================================
 fprintf('\n--- Preparing training data for Phase 4 visualization ---\n');
+trainTbl = load(fullfile(dataPath,'data_table_train.mat'),'dataTableTrain');
+wData = load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
+X_train_full_for_plot = vertcat(trainTbl.dataTableTrain.CombinedSpectra{:});
+y_train_full_for_plot = arrayfun(@(g) double(strcmp(g,'WHO-3'))*2+1, trainTbl.dataTableTrain.WHO_Grade, 'UniformOutput', false);
+y_train_full_for_plot = vertcat(y_train_full_for_plot{:});
+wavenumbers_original = wData.wavenumbers_roi;
+if iscolumn(wavenumbers_original); wavenumbers_original = wavenumbers_original'; end
 
-strategy_for_plot = cfg.outlierStrategy;
-if strcmpi(strategy_for_plot, 'OR')
-    trainingDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
-    x_var_name = 'X_train_no_outliers_OR';
-    y_var_name = 'y_train_no_outliers_OR_num';
+binningFactorForPlot = finalModelPackage.binningFactor;
+if binningFactorForPlot > 1
+    [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
 else
-    trainingDataFilePattern = '*_training_set_no_outliers_T2andQ.mat';
-    x_var_name = 'X_train_no_outliers_AND';
-    y_var_name = 'y_train_no_outliers_AND_num';
-end
-
-trainingDataFiles = dir(fullfile(dataPath, trainingDataFilePattern));
-if isempty(trainingDataFiles)
-    warning('No cleaned training set file found for strategy "%s". Mean spectra plots will be skipped.', strategy_for_plot);
-else
-    [~,idxSortPlot] = sort([trainingDataFiles.datenum],'descend');
-    trainingDataFile_for_plot = fullfile(dataPath, trainingDataFiles(idxSortPlot(1)).name);
-    fprintf('Loading training data for plotting from: %s\n', trainingDataFile_for_plot);
-    loadedTrainingData_for_plot = load(trainingDataFile_for_plot, x_var_name, y_var_name, 'wavenumbers_roi');
-    X_train_full_for_plot = loadedTrainingData_for_plot.(x_var_name);
-    y_train_full_for_plot = loadedTrainingData_for_plot.(y_var_name);
-    wavenumbers_original = loadedTrainingData_for_plot.wavenumbers_roi;
-
-    binningFactorForPlot = finalModelPackage.binningFactor;
-    if binningFactorForPlot > 1
-        [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
-    else
-        X_train_binned_for_plot = X_train_full_for_plot;
-        wavenumbers_binned_for_plot = wavenumbers_original;
-    end
+    X_train_binned_for_plot = X_train_full_for_plot;
+    wavenumbers_binned_for_plot = wavenumbers_original;
 end
 
 [~, sortIdxCoeff] = sort(abs(featureImportanceTable.LDACoefficient), 'descend');

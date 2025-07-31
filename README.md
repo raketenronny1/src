@@ -4,12 +4,12 @@ This repository contains MATLAB code for analysing Fourier-transform infrared (F
 
 ## Directory layout
 
-- `import_preprocessing/` – scripts for data preparation, preprocessing and outlier detection.
+- `import_preprocessing/` – scripts for data preparation and preprocessing.
 - `data_management/` – utilities to export file lists and intermediate results.
 - `helper_functions/` – refactored functions used throughout the pipeline.
 - `plotting/` – scripts for generating project figures.
 - `archive/` – older scripts retained for reference.
-- Top-level scripts such as `run_phase2_model_selection_comparative.m`, `run_phase3_final_evaluation.m` and `run_phase4_feature_interpretation.m` implement the main phases of the analysis.
+- Top-level scripts such as `run_phase2_model_selection.m`, `run_phase3_final_evaluation.m` and `run_phase4_feature_interpretation.m` implement the main phases of the analysis.
 
 The project expects the following folders in the repository root when running the scripts:
 
@@ -52,7 +52,7 @@ run('src/import_preprocessing/run_ftir_data_preparation_pipeline.m')
 run('src/import_preprocessing/run_split_training_test.m')
 ```
 
-Run `import_preprocessing/run_classwise_outlier_processing.m` to identify outliers by PCA for each class, create a cleaned training set and save a full set of visualisations separately for WHO‑1 and WHO‑3.
+Optionally run `import_preprocessing/run_pca_overview.m` to perform a PCA on the training spectra and generate two scatter plots showing WHO‑1 and WHO‑3 distributions.
 
 ### Phase 2 – Model and feature selection
 
@@ -60,7 +60,7 @@ Run nested cross-validation using:
 The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
 
 ```matlab
-run('src/run_phase2_model_selection_comparative.m')
+run('src/run_phase2_model_selection.m')
 ```
 
 Results are saved under `results/Phase2` and models under `models/Phase2`.
@@ -97,14 +97,7 @@ A helper menu `plotting/run_visualization_menu.m` lets you choose which figures 
 - `plotting/visualize_phase1.m` – requires `data/wavenumbers.mat` and
   `data/data_table_complete.mat` and writes Phase 1 plots to
   `figures/Phase1_Dissertation_Plots`.
-- `plotting/visualize_binning_effects.m` – visualises the effect of
-  different binning factors using
-`data/training_set_no_outliers.mat` and outputs to `figures/SideQuests`.
-- `plotting/visualize_outlier_exploration.m` – a function called from
-  `import_preprocessing/run_classwise_outlier_processing.m`. It expects the
-  spectra, labels, PCA results and a struct containing a
-  `figuresPath_OutlierExploration` field and produces several exploratory plots
-  in that directory. The classwise script calls it once for WHO-1 and once for WHO-3.
+`plotting/visualize_binning_effects.m` – visualises the effect of different binning factors using `data/data_table_train.mat` and outputs to `figures/SideQuests`.
 
 Example usage:
 
