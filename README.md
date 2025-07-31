@@ -82,7 +82,7 @@ Models are stored in `models/Phase3` and metrics in `results/Phase3`.
 
 ### Phase 4 – Feature interpretation
 
-Interpret the trained model by plotting LDA coefficients for the selected wavenumbers.
+Interpret the trained model by plotting LDA coefficients for the selected wavenumbers and generating mean spectra visualisations. Statistical p-value calculations were removed to streamline the phase.
 
 ```matlab
 run('src/run_phase4_feature_interpretation.m')
