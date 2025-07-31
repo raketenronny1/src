@@ -101,19 +101,16 @@ featureImportanceTable = table(...
     'VariableNames', {'BinnedWavenumber_cm_neg1', 'LDACoefficient', 'DirectionOfInfluence_WHO3'});
 
 
-%% 2.5 Calculate Univariate P-values for Selected Features
+%% 2.5 Prepare Training Data for Visualization
 % =========================================================================
-fprintf('\n--- Calculating Univariate P-values for the %d Selected Features ---\n', length(selectedWavenumbers));
+fprintf('\n--- Preparing training data for Phase 4 visualization ---\n');
 
-% --- Dynamically find the correct cleaned training set based on strategy ---
-strategy_for_pvals = cfg.outlierStrategy;
-fprintf('Searching for training data corresponding to outlier strategy: %s\n', strategy_for_pvals);
-
-if strcmpi(strategy_for_pvals, 'OR')
+strategy_for_plot = cfg.outlierStrategy;
+if strcmpi(strategy_for_plot, 'OR')
     trainingDataFilePattern = '*_training_set_no_outliers_T2orQ.mat';
     x_var_name = 'X_train_no_outliers_OR';
     y_var_name = 'y_train_no_outliers_OR_num';
-else % Default to AND strategy
+else
     trainingDataFilePattern = '*_training_set_no_outliers_T2andQ.mat';
     x_var_name = 'X_train_no_outliers_AND';
     y_var_name = 'y_train_no_outliers_AND_num';
@@ -121,59 +118,32 @@ end
 
 trainingDataFiles = dir(fullfile(dataPath, trainingDataFilePattern));
 if isempty(trainingDataFiles)
-    error('No cleaned training set file found for strategy "%s" in data path "%s" matching pattern "%s".', ...
-          strategy_for_pvals, dataPath, trainingDataFilePattern);
-end
-[~,idxSortPvals] = sort([trainingDataFiles.datenum],'descend');
-trainingDataFile_for_pvals = fullfile(dataPath, trainingDataFiles(idxSortPvals(1)).name);
-fprintf('Loading training data for p-values from: %s\n', trainingDataFile_for_pvals);
+    warning('No cleaned training set file found for strategy "%s". Mean spectra plots will be skipped.', strategy_for_plot);
+else
+    [~,idxSortPlot] = sort([trainingDataFiles.datenum],'descend');
+    trainingDataFile_for_plot = fullfile(dataPath, trainingDataFiles(idxSortPlot(1)).name);
+    fprintf('Loading training data for plotting from: %s\n', trainingDataFile_for_plot);
+    loadedTrainingData_for_plot = load(trainingDataFile_for_plot, x_var_name, y_var_name, 'wavenumbers_roi');
+    X_train_full_for_plot = loadedTrainingData_for_plot.(x_var_name);
+    y_train_full_for_plot = loadedTrainingData_for_plot.(y_var_name);
+    wavenumbers_original = loadedTrainingData_for_plot.wavenumbers_roi;
 
-try
-    loadedTrainingData_for_pvals = load(trainingDataFile_for_pvals, x_var_name, y_var_name, 'wavenumbers_roi');
-    X_train_full_for_pvals = loadedTrainingData_for_pvals.(x_var_name);
-    y_train_full_for_pvals = loadedTrainingData_for_pvals.(y_var_name);
-    wavenumbers_original = loadedTrainingData_for_pvals.wavenumbers_roi;
-    
-    binningFactorForPvals = finalModelPackage.binningFactor;
-    if binningFactorForPvals > 1
-        [X_train_binned_for_pvals, ~] = bin_spectra(X_train_full_for_pvals, wavenumbers_original, binningFactorForPvals);
+    binningFactorForPlot = finalModelPackage.binningFactor;
+    if binningFactorForPlot > 1
+        [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
     else
-        X_train_binned_for_pvals = X_train_full_for_pvals;
-    end
-    
-    X_train_selected_for_pvals = X_train_binned_for_pvals(:, selectedFeatureIndices_in_binned);
-catch ME
-    fprintf('ERROR loading/binning training data for p-value calculation: %s\n', ME.message);
-    error('Cannot proceed with p-value calculation.');
-end
-
-% ... (p-value calculation logic remains the same) ...
-numSelectedFeatures = length(selectedWavenumbers);
-p_values_ttest = NaN(numSelectedFeatures, 1);
-p_values_ranksum = NaN(numSelectedFeatures, 1);
-y_who1_idx = (y_train_full_for_pvals == 1);
-y_who3_idx = (y_train_full_for_pvals == 3);
-
-if sum(y_who1_idx) >= 2 && sum(y_who3_idx) >= 2
-    for i = 1:numSelectedFeatures
-        [~, p_values_ttest(i)] = ttest2(X_train_selected_for_pvals(y_who1_idx, i), X_train_selected_for_pvals(y_who3_idx, i), 'Vartype', 'unequal');
-        p_values_ranksum(i) = ranksum(X_train_selected_for_pvals(y_who1_idx, i), X_train_selected_for_pvals(y_who3_idx, i));
+        X_train_binned_for_plot = X_train_full_for_plot;
+        wavenumbers_binned_for_plot = wavenumbers_original;
     end
 end
 
-featureImportanceTable.P_Value_TTest = p_values_ttest;
-featureImportanceTable.P_Value_RankSum = p_values_ranksum;
-alpha = 0.05;
-bonferroni_corrected_alpha = alpha / numSelectedFeatures;
-featureImportanceTable.Significant_TTest_Bonferroni = (p_values_ttest < bonferroni_corrected_alpha);
-featureImportanceTable.Significant_RankSum_Bonferroni = (p_values_ranksum < bonferroni_corrected_alpha);
-[~, sortIdxCoeff_updated] = sort(abs(featureImportanceTable.LDACoefficient), 'descend');
-sortedFeatureImportanceTable_withPvals = featureImportanceTable(sortIdxCoeff_updated,:);
-fprintf('\nTop 10 Most Influential Features (Binned Wavenumbers) with P-values:\n');
-disp(sortedFeatureImportanceTable_withPvals(1:min(10, height(sortedFeatureImportanceTable_withPvals)),:));
-featureTableFilename_withPvals = fullfile(resultsPath, sprintf('%s_Phase4_FeatureImportanceTable_WithPvalues.csv', dateStr));
-writetable(sortedFeatureImportanceTable_withPvals, featureTableFilename_withPvals);
-fprintf('Full feature importance table with p-values saved to: %s\n', featureTableFilename_withPvals);
+[~, sortIdxCoeff] = sort(abs(featureImportanceTable.LDACoefficient), 'descend');
+sortedFeatureImportanceTable = featureImportanceTable(sortIdxCoeff,:);
+fprintf('\nTop 10 Most Influential Features (Binned Wavenumbers):\n');
+disp(sortedFeatureImportanceTable(1:min(10, height(sortedFeatureImportanceTable)),:));
+featureTableFilename = fullfile(resultsPath, sprintf('%s_Phase4_FeatureImportanceTable.csv', dateStr));
+writetable(sortedFeatureImportanceTable, featureTableFilename);
+fprintf('Full feature importance table saved to: %s\n', featureTableFilename);
 
 
 %% 3. Plot LDA Coefficients (Feature Importance Spectrum)
@@ -214,19 +184,8 @@ fprintf('LDA coefficient spectrum plot saved to: %s.(fig/tiff)\n', ldaCoeffPlotF
 % =========================================================================
 fprintf('\n--- Generating Mean Spectra Plot with Highlighted Key Features ---\n');
 
-if exist('X_train_full_for_pvals', 'var') && ~isempty(X_train_full_for_pvals)
-    X_train_for_mean_spectra = X_train_full_for_pvals;
-    y_train_for_mean_spectra = y_train_full_for_pvals;
-    wavenumbers_original_plot = wavenumbers_original;
-
-    binningFactorForPlot = finalModelPackage.binningFactor;
-    if binningFactorForPlot > 1
-        [X_train_binned_for_plot, wavenumbers_binned_for_plot] = ...
-            bin_spectra(X_train_for_mean_spectra, wavenumbers_original_plot, binningFactorForPlot);
-    else
-        X_train_binned_for_plot = X_train_for_mean_spectra;
-        wavenumbers_binned_for_plot = wavenumbers_original_plot;
-    end
+if exist('X_train_binned_for_plot', 'var') && ~isempty(X_train_binned_for_plot)
+    y_train_for_mean_spectra = y_train_full_for_plot;
 
     mean_spectrum_who1_binned = mean(X_train_binned_for_plot(y_train_for_mean_spectra==1, :), 1);
     mean_spectrum_who3_binned = mean(X_train_binned_for_plot(y_train_for_mean_spectra==3, :), 1);
