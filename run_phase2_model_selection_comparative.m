@@ -143,18 +143,18 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         pipelineIdx = 0;
         % --- Pipeline 1: Baseline (Binning) + LDA ---
         p = struct(); p.name = 'BaselineLDA'; p.feature_selection_method = 'none'; p.classifier = 'LDA';
-        p.hyperparameters_to_tune = {'binningFactor'}; p.binningFactors = [1, 2, 4, 8, 16];
+        p.hyperparameters_to_tune = {'binningFactor'}; p.binningFactors = [4, 8];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 2: Fisher Ratio + LDA ---
         p = struct(); p.name = 'FisherLDA'; p.feature_selection_method = 'fisher'; p.classifier = 'LDA';
         p.hyperparameters_to_tune = {'binningFactor', 'fisherFeaturePercent'};
-        p.binningFactors = [1, 2, 4, 8, 16];
+        p.binningFactors = [4, 8];
         p.fisherFeaturePercent_range = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 3: PCA + LDA ---
         p = struct(); p.name = 'PCALDA'; p.feature_selection_method = 'pca'; p.classifier = 'LDA';
         p.hyperparameters_to_tune = {'binningFactor', 'pcaVarianceToExplain'};
-        p.binningFactors = [1, 2, 4, 8, 16]; p.pcaVarianceToExplain_range = [0.90, 0.95, 0.99];
+        p.binningFactors = [4, 8]; p.pcaVarianceToExplain_range = [0.90, 0.95, 0.99];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         % --- Pipeline 4: MRMR + LDA ---
         p = struct();
@@ -162,7 +162,7 @@ for iStrategy = 1:length(outlierStrategiesToCompare)
         p.feature_selection_method = 'mrmr';
         p.classifier = 'LDA';
         p.hyperparameters_to_tune = {'binningFactor', 'mrmrFeaturePercent'};
-        p.binningFactors = [1, 2, 4, 8, 16];
+        p.binningFactors = [4, 8];
         p.mrmrFeaturePercent_range = [0.05, 0.1, 0.2, 0.3, 0.4];
         pipelineIdx = pipelineIdx + 1; pipelines{pipelineIdx} = p;
         

@@ -34,22 +34,22 @@ metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
 pipelines = cell(0,1); pidx=0;
 
 p=struct(); p.name='BaselineLDA'; p.feature_selection_method='none'; p.classifier='LDA';
-p.hyperparameters_to_tune={'binningFactor'}; p.binningFactors=[1 2 4 8 16];
+p.hyperparameters_to_tune={'binningFactor'}; p.binningFactors=[4 8];
 pidx=pidx+1; pipelines{pidx}=p;
 
 p=struct(); p.name='FisherLDA'; p.feature_selection_method='fisher'; p.classifier='LDA';
 p.hyperparameters_to_tune={'binningFactor','fisherFeaturePercent'};
-p.binningFactors=[1 2 4 8 16]; p.fisherFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4 0.5];
+p.binningFactors=[4 8]; p.fisherFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4 0.5];
 pidx=pidx+1; pipelines{pidx}=p;
 
 p=struct(); p.name='PCALDA'; p.feature_selection_method='pca'; p.classifier='LDA';
 p.hyperparameters_to_tune={'binningFactor','pcaVarianceToExplain'};
-p.binningFactors=[1 2 4 8 16]; p.pcaVarianceToExplain_range=[0.90 0.95 0.99];
+p.binningFactors=[4 8]; p.pcaVarianceToExplain_range=[0.90 0.95 0.99];
 pidx=pidx+1; pipelines{pidx}=p;
 
 p=struct(); p.name='MRMRLDA'; p.feature_selection_method='mrmr'; p.classifier='LDA';
 p.hyperparameters_to_tune={'binningFactor','mrmrFeaturePercent'};
-p.binningFactors=[1 2 4 8 16]; p.mrmrFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4];
+p.binningFactors=[4 8]; p.mrmrFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4];
 pidx=pidx+1; pipelines{pidx}=p;
 
 %% Nested CV
