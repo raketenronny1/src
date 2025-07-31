@@ -17,7 +17,7 @@
 %       T2_values, Q_values
 %       T2_threshold, Q_threshold
 %       flag_T2, flag_Q, is_T2_only, is_Q_only,
-%       is_T2_and_Q, is_OR_outlier, is_normal
+%       is_outlier, is_normal
 %
 % Date: 2025-05-18
 
@@ -102,14 +102,13 @@ function results = compute_pca_t2_q(X, alpha, varianceToModel)
     flag_Q  = (Q_values > Q_threshold);
     is_T2_only  = flag_T2 & ~flag_Q;
     is_Q_only   = ~flag_T2 & flag_Q;
-    is_T2_and_Q = flag_T2 & flag_Q;
-    is_OR_outlier = flag_T2 | flag_Q;
-    is_normal = ~is_OR_outlier;
+    is_outlier = flag_T2 | flag_Q;
+    is_normal = ~is_outlier;
 
     results = struct('coeff',coeff,'score',score,'latent',latent,'explained',explained,'mu',mu,
                      'k_model',k_model,'T2_values',T2_values,'Q_values',Q_values,
                      'T2_threshold',T2_threshold,'Q_threshold',Q_threshold,
                      'flag_T2',flag_T2,'flag_Q',flag_Q,'is_T2_only',is_T2_only,
-                     'is_Q_only',is_Q_only,'is_T2_and_Q',is_T2_and_Q,
-                     'is_OR_outlier',is_OR_outlier,'is_normal',is_normal);
+                     'is_Q_only',is_Q_only,'is_outlier',is_outlier,
+                     'is_normal',is_normal);
 end
