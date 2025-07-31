@@ -8,15 +8,9 @@
 
 cfg = configure_cfg();
 
-disp('Select outlier removal strategy for evaluation:');
-disp(' 1 - AND (consensus, recommended)');
-disp(' 2 - OR  (lenient)');
-usr = input('Enter choice [1]: ','s');
-if isempty(usr) || str2double(usr)==1
-    cfg.outlierStrategy = 'AND';
-else
-    cfg.outlierStrategy = 'OR';
-end
+% Use the recommended AND strategy by default.  Edit `cfg.outlierStrategy`
+% manually if a different behaviour is desired.
+cfg.outlierStrategy = 'AND';
 
 % Ensure Phase 2 compares only the selected strategy
 cfg.outlierStrategiesToCompare = {cfg.outlierStrategy};
