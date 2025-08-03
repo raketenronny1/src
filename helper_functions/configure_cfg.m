@@ -6,13 +6,12 @@ function cfg = configure_cfg(varargin)
 %   cfg = CONFIGURE_CFG(...,'Name',Value) sets or overrides fields.
 %
 %   Recognised fields:
-%     projectRoot                - repository root path
-%     outlierStrategy            - placeholder for compatibility
-%     outlierStrategiesToCompare - placeholder array
+%     projectRoot        - repository root path
+%     useOutlierRemoval  - true to load pre-filtered training data
 %
 %   Example:
 %       cfg = configure_cfg('projectRoot','/path/to/project', ...
-%                           'outlierStrategy','OR');
+%                           'useOutlierRemoval',true);
 %
 % Date: 2025-06-06
 
@@ -40,11 +39,8 @@ function cfg = configure_cfg(varargin)
             cfg.projectRoot = pwd;
         end
     end
-    if ~isfield(cfg,'outlierStrategy')
-        cfg.outlierStrategy = 'default';
-    end
-    if ~isfield(cfg,'outlierStrategiesToCompare')
-        cfg.outlierStrategiesToCompare = {'default'};
+    if ~isfield(cfg,'useOutlierRemoval')
+        cfg.useOutlierRemoval = true;
     end
 end
 
