@@ -145,6 +145,8 @@ function [yPred,scores] = apply_model_to_data(model,X,wn)
 end
 
 function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
+    % probeIDs should be an array of probe identifiers (numeric or string).
+    probeIDs = string(probeIDs); % ensure string comparison
     probes = unique(probeIDs,'stable');
     tbl = table();
     tbl.Diss_ID = probes;
@@ -152,7 +154,7 @@ function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,met
     tbl.MeanProbWHO3 = zeros(numel(probes),1);
     tbl.PredLabel = zeros(numel(probes),1);
     for i=1:numel(probes)
-        idx = strcmp(probeIDs,probes{i});
+        idx = strcmp(probeIDs,probes(i));
         tbl.TrueLabel(i) = mode(yTrue(idx));
         tbl.MeanProbWHO3(i) = mean(scores(idx));
         tbl.PredLabel(i) = tbl.MeanProbWHO3(i)>0.5; % 0=>WHO1, 1=>WHO3
