@@ -14,6 +14,7 @@ function run_visualization_menu()
         fprintf(' 2 - Exploratory outlier visualizations\n');
         fprintf(' 3 - Binning effect plot\n');
         fprintf(' 4 - Project summary (Phases 2-4)\n');
+        fprintf(' 5 - Confusion matrix (Phases 2 & 3)\n');
         fprintf(' 0 - Exit\n');
         usr = input('Enter choice: ','s');
         if isempty(usr), choice = 0; else choice = str2double(usr); end
@@ -26,6 +27,8 @@ function run_visualization_menu()
                 visualize_binning_effects(P, opts);
             case 4
                 visualize_project_summary(cfg, opts);
+            case 5
+                visualize_confusion_matrix(cfg, opts);
             otherwise
                 if choice ~= 0
                     disp('Invalid selection.');
