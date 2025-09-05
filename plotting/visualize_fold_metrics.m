@@ -15,7 +15,14 @@ function visualize_fold_metrics(P, opts)
         opts = plot_settings();
     end
 
-    phase2ResultsDir = fullfile(P.resultsPath, 'Phase2');
+    % Determine the Phase 2 results directory. If P.resultsPath already
+    % points to a Phase2 subdirectory, use it directly; otherwise append it.
+    phase2ResultsDir = P.resultsPath;
+    resultsPathClean = regexprep(P.resultsPath, [filesep '+$'], '');
+    if ~endsWith(resultsPathClean, 'Phase2')
+        phase2ResultsDir = fullfile(P.resultsPath, 'Phase2');
+    end
+
     files = dir(fullfile(phase2ResultsDir, '*_Phase2_AllPipelineResults.mat'));
     if isempty(files)
         error('No Phase 2 results file found in %s.', phase2ResultsDir);
