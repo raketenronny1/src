@@ -15,15 +15,15 @@ function [yPred,scores] = apply_model_to_data(model,X,wn)
 %   wn    - row vector of wavenumbers corresponding to columns of X
 %
 % Outputs:
-%   yPred - predicted class labels
+%   yPred  - predicted class labels
 %   scores - classification scores from the model
 %
 % This helper consolidates the shared logic used in Phase 2 and Phase 3
 % scripts for applying trained models to new data.
 
-    Xp = X; currentWn = wn; %#ok<NASGU>
+    Xp = X;
     if isfield(model,'binningFactor') && model.binningFactor>1
-        [Xp,currentWn] = bin_spectra(X,wn,model.binningFactor);
+        Xp = bin_spectra(X,wn,model.binningFactor);
     end
     switch lower(model.featureSelectionMethod)
         case 'pca'
