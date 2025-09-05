@@ -9,6 +9,7 @@ fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
 
+% Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
 dataPath = P.dataPath;
 resultsPath = P.resultsPath;
