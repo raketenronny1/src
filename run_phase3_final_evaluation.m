@@ -130,20 +130,6 @@ fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
 end
 
 %% Helper functions
-function [yPred,scores] = apply_model_to_data(model,X,wn)
-    Xp = X; currentWn = wn;
-    if isfield(model,'binningFactor') && model.binningFactor>1
-        [Xp,currentWn] = bin_spectra(X,wn,model.binningFactor);
-    end
-    switch lower(model.featureSelectionMethod)
-        case 'pca'
-            Xp = (Xp - model.PCAMu) * model.PCACoeff;
-        otherwise
-            Xp = Xp(:,model.selectedFeatureIndices);
-    end
-    [yPred,scores] = predict(model.LDAModel,Xp);
-end
-
 function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison

@@ -123,20 +123,6 @@ save(resultsFile,'resultsPerPipeline','pipelines','metricNames','numOuterFolds',
 fprintf('Phase 2 results saved to %s\n',resultsFile);
 end
 
-function [yPred,scores] = apply_model_to_data(model,X,wn)
-    Xp = X; currentWn = wn;
-    if isfield(model,'binningFactor') && model.binningFactor>1
-        [Xp,currentWn] = bin_spectra(X,wn,model.binningFactor);
-    end
-    switch lower(model.featureSelectionMethod)
-        case 'pca'
-            Xp = (Xp - model.PCAMu) * model.PCACoeff;
-        otherwise
-            Xp = Xp(:,model.selectedFeatureIndices);
-    end
-    [yPred,scores] = predict(model.LDAModel,Xp);
-end
-
 function fieldName = find_field_by_prefix(S,prefix)
     fieldName = '';
     fns = fieldnames(S);
