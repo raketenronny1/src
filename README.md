@@ -92,15 +92,21 @@ Outputs appear in `results/Phase4` and `figures/Phase4`.
 ### Visualizing project results
 
 After completing Phases 2–4 you can summarise the pipeline outputs with
-`plotting/visualize_project_summary.m`. Running this script generates
+`plotting/visualize_project_summary.m`. This script depends on the
+`spider_plot_R2019b` helper referenced in the requirements above—download it
+from the [MATLAB Central File Exchange](https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot)
+and add it to your MATLAB path if necessary. Running the script generates
 publication-ready plots under `figures/ProjectSummaryFigures`.
 
-A helper menu `plotting/run_visualization_menu.m` lets you choose which figures to create. Other scripts that produce figures are:
+A helper menu `plotting/run_visualization_menu.m` lets you choose which figures
+to create. Other scripts that produce figures are:
 
 - `plotting/visualize_phase1.m` – requires `data/wavenumbers.mat` and
   `data/data_table_complete.mat` and writes Phase 1 plots to
   `figures/Phase1_Dissertation_Plots`.
-`plotting/visualize_binning_effects.m` – visualises the effect of different binning factors using `data/data_table_train.mat` and outputs to `figures/SideQuests`.
+- `plotting/visualize_binning_effects.m` – visualises the effect of different
+  binning factors using `data/data_table_train.mat` and outputs to
+  `figures/SideQuests`.
 
 Example usage:
 
@@ -130,12 +136,4 @@ M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
-
-## Visualizing project results
-
-The script `plotting/visualize_project_summary.m` generates summary figures for Phases 2–4.
-It requires the `spider_plot_R2019b` helper referenced in the requirements above.
-If the script reports that this function is missing, download it from the
-[MATLAB Central File Exchange](https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot)
-and add it to your MATLAB path before running the visualization script.
 
