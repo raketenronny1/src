@@ -55,7 +55,7 @@ function visualize_spectral_heatmap(P, opts)
         error('No class label column found in data_all_positions.');
     end
     class_labels = data_all_positions.(classField);
-    class_labels = cellstr(string(class_labels));
+    class_labels = string(class_labels);
 
     unique_classes = unique(class_labels);
     numClasses = numel(unique_classes);
@@ -67,8 +67,8 @@ function visualize_spectral_heatmap(P, opts)
     xlabel(t, opts.plotXLabel, 'FontSize', opts.plotFontSize);
 
     for i = 1:numClasses
-        thisClass = unique_classes{i};
-        idx = strcmp(class_labels, thisClass);
+        thisClass = unique_classes(i);
+        idx = class_labels == thisClass;
         spectraBlocks = data_all_positions.FinalProcessedSpectrum(idx);
         spectraMat = vertcat(spectraBlocks{:});
 
@@ -80,7 +80,7 @@ function visualize_spectral_heatmap(P, opts)
             set(ax,'YDir','normal','XDir','reverse');
             ylabel(ax, sprintf('Index (n=%d)', size(spectraMat,1)), 'FontSize', opts.plotFontSize);
         end
-        title(ax, sprintf('%s', thisClass), 'Interpreter','none', 'FontSize', opts.plotFontSize);
+        title(ax, char(thisClass), 'Interpreter','none', 'FontSize', opts.plotFontSize);
         colorbar(ax);
     end
     colormap(t, parula);
