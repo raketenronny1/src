@@ -13,7 +13,8 @@ function run_visualization_menu()
         fprintf(' 1 - Phase 1 figures\n');
         fprintf(' 2 - Exploratory outlier visualizations\n');
         fprintf(' 3 - Binning effect plot\n');
-        fprintf(' 4 - Project summary (Phases 2-4)\n');
+        fprintf(' 4 - Spectral heatmap (preprocessed spectra)\n');
+        fprintf(' 5 - Project summary (Phases 2-4)\n');
         fprintf(' 0 - Exit\n');
         usr = input('Enter choice: ','s');
         if isempty(usr), choice = 0; else choice = str2double(usr); end
@@ -25,6 +26,8 @@ function run_visualization_menu()
             case 3
                 visualize_binning_effects(P, opts);
             case 4
+                visualize_spectral_heatmap(P, opts);
+            case 5
                 visualize_project_summary(cfg, opts);
             otherwise
                 if choice ~= 0
