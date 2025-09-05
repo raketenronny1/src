@@ -29,7 +29,7 @@ function run_visualization_menu()
             case 4
                 visualize_project_summary(cfg, opts);
             case 5
-                visualize_fold_metrics(cfg, opts);
+                visualize_fold_metrics(P, opts);
             case 6
                 visualize_confusion_matrix(cfg, opts);
             otherwise
