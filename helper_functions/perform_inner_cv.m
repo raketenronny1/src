@@ -1,13 +1,7 @@
 % perform_inner_cv.m
 %
 % Helper function to perform inner cross-validation for hyperparameter tuning.
-% Date: 2025-05-15 (Updated with fscmrmr fix)
-
-
-% perform_inner_cv.m
-%
-% Helper function to perform inner cross-validation for hyperparameter tuning.
-% Date: 2025-05-15 (Corrected to enforce fisherFeaturePercent)
+% Date: 2025-05-15 (Updated with fscmrmr fix; Corrected to enforce fisherFeaturePercent)
 
 function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
@@ -47,8 +41,8 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         if isfield(pipelineConfig,'binningFactors') && ~isempty(pipelineConfig.binningFactors) && ...
            ~ismember('binningFactor', pipelineConfig.hyperparameters_to_tune) 
              currentHyperparams.binningFactor = pipelineConfig.binningFactors(1); 
-        elseif ~isfield(pipelineConfig.hyperparameters_to_tune, 'binningFactor') 
-             currentHyperparams.binningFactor = 1; 
+        elseif ~ismember('binningFactor', pipelineConfig.hyperparameters_to_tune)
+             currentHyperparams.binningFactor = 1;
         end
         hyperparamCombinations = {currentHyperparams};
     else
