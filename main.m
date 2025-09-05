@@ -8,13 +8,10 @@
 
 cfg = configure_cfg();
 
-% Use the recommended AND strategy by default.  Edit `cfg.outlierStrategy`
-% manually if a different behaviour is desired.
-cfg.outlierStrategy = 'AND';
+% Choose whether to run Phase 2 on the outlier-filtered training set or on
+% the unaltered data.
+cfg.useOutlierRemoval = true;  % set to false to analyse the full dataset
 
-% Ensure Phase 2 compares only the selected strategy
-cfg.outlierStrategiesToCompare = {cfg.outlierStrategy};
-
-run_phase2_model_selection_comparative(cfg);
+run_phase2_model_selection(cfg);
 run_phase3_final_evaluation(cfg);
 run_phase4_feature_interpretation(cfg);

@@ -182,13 +182,19 @@ try
         cleanedFileFig2 = fullfile(cleanedFilesFig2(idxCF(1)).folder, cleanedFilesFig2(idxCF(1)).name);
         fprintf('Loading cleaned training data for Figure 2 from: %s\n', cleanedFileFig2);
         tmpClean = load(cleanedFileFig2);
-        if isfield(tmpClean,'X_train_no_outliers_AND') && isfield(tmpClean,'y_train_no_outliers_AND_num')
-            X_train_cleaned_fig2 = tmpClean.X_train_no_outliers_AND;
-            y_train_numeric_cleaned_fig2 = tmpClean.y_train_no_outliers_AND_num;
-            data_cleaned_loaded_fig2 = true;
-        elseif isfield(tmpClean,'X_train_no_outliers_OR') && isfield(tmpClean,'y_train_no_outliers_OR_num')
-            X_train_cleaned_fig2 = tmpClean.X_train_no_outliers_OR;
-            y_train_numeric_cleaned_fig2 = tmpClean.y_train_no_outliers_OR_num;
+        xField = '';
+        yField = '';
+        fns = fieldnames(tmpClean);
+        for f = 1:numel(fns)
+            if startsWith(fns{f}, 'X_train_no_outliers', 'IgnoreCase', true)
+                xField = fns{f};
+            elseif startsWith(fns{f}, 'y_train_no_outliers', 'IgnoreCase', true)
+                yField = fns{f};
+            end
+        end
+        if ~isempty(xField) && ~isempty(yField)
+            X_train_cleaned_fig2 = tmpClean.(xField);
+            y_train_numeric_cleaned_fig2 = tmpClean.(yField);
             data_cleaned_loaded_fig2 = true;
         else
             warning('Expected variables not found in %s. Figure 2 will be skipped.', cleanedFileFig2);

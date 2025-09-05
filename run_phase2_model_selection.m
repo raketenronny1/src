@@ -1,8 +1,8 @@
 function run_phase2_model_selection(cfg)
 %RUN_PHASE2_MODEL_SELECTION
 %
-% Model and feature selection without any outlier removal.
-% Performs nested cross-validation on the training set and
+% Model and feature selection with optional outlier removal.
+% Performs nested cross-validation on the chosen training set and
 % saves the resulting models and metrics.
 
 fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
@@ -17,11 +17,38 @@ if ~isfolder(resultsPath); mkdir(resultsPath); end
 if ~isfolder(modelsPath); mkdir(modelsPath); end
 
 %% Load training data
-load(fullfile(dataPath,'data_table_train.mat'),'dataTableTrain');
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
-[X_full, y_full,~, probeIDs_full] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+if isfield(cfg,'useOutlierRemoval') && cfg.useOutlierRemoval
+    cleanedFiles = dir(fullfile(dataPath,'*_training_set_no_outliers*.mat'));
+    if isempty(cleanedFiles)
+        error('No cleaned training set found in %s.', dataPath);
+    end
+    [~,idx] = sort([cleanedFiles.datenum],'descend');
+    dataFile = fullfile(cleanedFiles(idx(1)).folder, cleanedFiles(idx(1)).name);
+    fprintf('Loading cleaned training data from: %s\n', dataFile);
+    tmp = load(dataFile);
+    xField = find_field_by_prefix(tmp,'X_train_no_outliers');
+    yField = find_field_by_prefix(tmp,'y_train_no_outliers');
+    pField = find_field_by_prefix(tmp,'Patient_ID_no_outliers');
+    if isempty(xField) || isempty(yField) || isempty(pField)
+        error('Expected training variables not found in %s.', dataFile);
+    end
+    X_full = tmp.(xField);
+    y_full = tmp.(yField);
+    probeIDs_full = tmp.(pField);
+    if isfield(tmp,'wavenumbers_roi')
+        wavenumbers_roi = tmp.wavenumbers_roi;
+    else
+        w_data = load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
+        wavenumbers_roi = w_data.wavenumbers_roi;
+    end
+    if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
+else
+    load(fullfile(dataPath,'data_table_train.mat'),'dataTableTrain');
+    load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
+    if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
+    [X_full, y_full,~, probeIDs_full] = flatten_spectra_for_pca( ...
+        dataTableTrain, length(wavenumbers_roi));
+end
 
 %% Cross-validation setup
 numOuterFolds = 5; numInnerFolds = 3;
@@ -108,4 +135,15 @@ function [yPred,scores] = apply_model_to_data(model,X,wn)
             Xp = Xp(:,model.selectedFeatureIndices);
     end
     [yPred,scores] = predict(model.LDAModel,Xp);
+end
+
+function fieldName = find_field_by_prefix(S,prefix)
+    fieldName = '';
+    fns = fieldnames(S);
+    for i=1:numel(fns)
+        if startsWith(fns{i}, prefix, 'IgnoreCase', true)
+            fieldName = fns{i};
+            return;
+        end
+    end
 end

@@ -38,7 +38,8 @@ accepts name/value pairs for overrides.
 
 ```matlab
 cfg = configure_cfg();
-run_phase3_final_evaluation(cfg);
+cfg.useOutlierRemoval = true;   % set false to keep all training data
+run('src/main.m')
 ```
 
 ## Analysis pipeline

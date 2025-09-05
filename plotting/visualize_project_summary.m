@@ -31,19 +31,18 @@ function visualize_project_summary(cfg, opts)
     colorTest = opts.colorTest;
 
     %% 1. Load Phase 2 and Phase 3 Results
-    strategy = cfg.outlierStrategy;
-    p3_files = dir(fullfile(P.resultsPath, 'Phase3', sprintf('*_Phase3_ComparisonResults_Strat_%s.mat', strategy)));
+    p3_files = dir(fullfile(P.resultsPath, 'Phase3', '*_Phase3_ComparisonResults.mat'));
     if isempty(p3_files)
-        error('No Phase 3 results file found for strategy %s. Run Phase 3 first.', strategy);
+        error('No Phase 3 results file found. Run Phase 3 first.');
     end
     [~,idxSortP3] = sort([p3_files.datenum],'descend');
     p3_data = load(fullfile(p3_files(idxSortP3(1)).folder, p3_files(idxSortP3(1)).name), 'bestModelInfo');
     bestPipelineName = p3_data.bestModelInfo.name;
     bestPipelineTestMetrics = p3_data.bestModelInfo.metrics;
 
-    p2_files = dir(fullfile(P.resultsPath, 'Phase2', sprintf('*_Phase2_AllPipelineResults_Strat_%s.mat', strategy)));
+    p2_files = dir(fullfile(P.resultsPath, 'Phase2', '*_Phase2_AllPipelineResults.mat'));
     if isempty(p2_files)
-        error('No Phase 2 results file found for strategy %s. Run Phase 2 first.', strategy);
+        error('No Phase 2 results file found. Run Phase 2 first.');
     end
     [~,idxSortP2] = sort([p2_files.datenum],'descend');
     p2_data = load(fullfile(p2_files(idxSortP2(1)).folder, p2_files(idxSortP2(1)).name), 'currentStrategyPipelinesResults', 'pipelines', 'metricNames');
@@ -79,7 +78,7 @@ function visualize_project_summary(cfg, opts)
     spider_plot_R2019b(P_spider, 'AxesLabels', spider_axes_labels, 'AxesLimits', axesLimitsSpider, ...
         'AxesInterval',5,'AxesPrecision',2,'FillOption','on','FillTransparency',[0.2,0.1], ...
         'Color',[colorCV; colorTest],'LineWidth',2.5,'Marker',{'o','s'},'MarkerSize',80);
-    title({sprintf('Performance Profile: %s Pipeline', bestPipelineName); sprintf('(Outlier Strategy: %s)', strategy)}, 'FontSize', 14);
+    title(sprintf('Performance Profile: %s Pipeline', bestPipelineName), 'FontSize', 14);
     legend({'Mean Cross-Validation','Final Test Set'},'Location','southoutside','FontSize',12);
 
     outBase = fullfile(figuresPath_output, sprintf('%s_P_Summary_SpiderPlot_%s', dateStrForFilenames, bestPipelineName));
