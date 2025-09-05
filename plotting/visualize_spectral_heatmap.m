@@ -55,8 +55,7 @@ function visualize_spectral_heatmap(P, opts)
         error('No class label column found in data_all_positions.');
     end
     class_labels = data_all_positions.(classField);
-    if iscategorical(class_labels), class_labels = cellstr(class_labels); end
-    if isstring(class_labels), class_labels = cellstr(class_labels); end
+    class_labels = cellstr(string(class_labels));
 
     unique_classes = unique(class_labels);
     numClasses = numel(unique_classes);
