@@ -23,6 +23,15 @@ models/          % saved models
 figures/         % generated plots
 ```
 
+## Required Inputs
+
+The core scripts rely on MATLAB data files stored under `data/`:
+
+- `data_table_train.mat`
+- `data_table_test.mat`
+- `wavenumbers.mat`
+- `*_training_set_no_outliers*.mat` when using outlier removal
+
 ## Requirements
 
 - MATLAB R2021b or newer
@@ -123,6 +132,10 @@ run('src/plotting/visualize_phase1.m')
 % Binning effect visualisation
 run('src/plotting/visualize_binning_effects.m')
 ```
+
+## Cleaning Outputs
+
+Files in `results/`, `models/`, and `figures/` can accumulate across runs. Periodically remove or archive old outputs to keep the repository tidy. The `cleanup_results` helper automates this process.
 
 ## Refactored helper functions
 
