@@ -85,14 +85,13 @@ for p = 1:P
     hpCells = S2.resultsPerPipeline(p).outerFoldBestHyperparams;
     names = fieldnames(hpCells(1));
     for k = 1:numel(names)
-        v = arrayfun(@(h) h.(names{k}), hpCells);
+        v = arrayfun(@(h) h.(names{k}), hpCells, 'UniformOutput', false);
         key = names{k};
         if ~isfield(HP, key), HP.(key) = table(); end
-        % Count frequencies per pipeline
-        cats = unique(v);
-        cnts = cellfun(@(c) nnz(isequaln(v, c)), num2cell(cats)); %#ok<DISEQN>
-        % robust count (fallback)
-        cnts = arrayfun(@(c) sum(v==c), cats);
+        % Count frequencies per pipeline (supports nonnumeric/non-scalar values)
+        vStr = string(cellfun(@hp_val2str, v, 'UniformOutput', false));
+        cats = unique(vStr);
+        cnts = arrayfun(@(c) sum(vStr==c), cats);
         T = table(string(pipeNames(p)), categorical(cats(:)), cnts(:), ...
             'VariableNames', {'Pipeline', 'Value', 'Count'});
         HP.(key) = [HP.(key); T];
@@ -202,6 +201,17 @@ function s = orderfields_from(metricNames)
     % Returns a struct with matching metric order to use with orderfields
     for i = 1:numel(metricNames)
         s.(metricNames{i}) = [];
+    end
+end
+
+function s = hp_val2str(v)
+    % Convert hyperparameter values of arbitrary type to comparable strings
+    if ischar(v) || isstring(v)
+        s = string(v);
+    elseif isnumeric(v) && isscalar(v)
+        s = string(v);
+    else
+        s = string(mat2str(v));
     end
 end
 
