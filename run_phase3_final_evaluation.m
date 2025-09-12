@@ -50,6 +50,20 @@ modelFiles = dir(fullfile(modelsPathP2, '*_Phase2_*_Model.mat'));
 if isempty(modelFiles)
     error('No Phase 2 models found in %s.', modelsPathP2);
 end
+% Keep only the most recent model file for each pipeline to avoid duplicates
+fileMap = containers.Map();
+for i = 1:numel(modelFiles)
+    tokens = regexp(modelFiles(i).name,'^\d+_Phase2_(.+)_Model\.mat$','tokens','once');
+    if isempty(tokens); continue; end
+    pipe = tokens{1};
+    if ~isKey(fileMap, pipe) || modelFiles(i).datenum > fileMap(pipe).datenum
+        fileMap(pipe) = modelFiles(i);
+    end
+end
+modelFilesCell = values(fileMap);
+modelFiles = [modelFilesCell{:}];
+[~,order] = sort({modelFiles.name});
+modelFiles = modelFiles(order);
 resFile = dir(fullfile(resultsPathP2,'*_Phase2_AllPipelineResults.mat'));
 if isempty(resFile)
     warning('Phase 2 results file not found.');
