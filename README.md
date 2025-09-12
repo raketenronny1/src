@@ -116,6 +116,8 @@ to create. Other scripts that produce figures are:
 - `plotting/visualize_binning_effects.m` – visualises the effect of different
   binning factors using `data/data_table_train.mat` and outputs to
   `figures/SideQuests`.
+- `plotting/visualize_model_comparison_spiderplots.m` – generates spider
+  plots comparing model performance for AUC and F2\_WHO3 across pipelines.
 
 Example usage:
 
