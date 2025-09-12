@@ -325,33 +325,26 @@ if hasProbe && any(~isnan(MET_PROBE(:)))
         'Label', 'tab:probe_comparison');
 end
 
-%% === Optional: Confusion matrix & ROC for best model (Phase 3) ===
-if isfield(S3, 'bestModelInfo')
-    B = S3.bestModelInfo;
-    
-    % Confusion matrix from predicted + (if available) true labels
-    if isfield(B,'probeTable') && isnumeric(B.probeTable) && all(size(B.probeTable) == [2 2])
-        % If probeTable is 2x2 confusion matrix:
-        C = B.probeTable;
-        plot_confusion_matrix(C, fullfile(outFigDir,'Fig2_Best_ConfusionMatrix.pdf'));
-    end
+%% === Confusion matrices & ROC curves for each model (Phase 3) ===
+for i = 1:P3
+    mdlName = pipeNames3(i);
 
-    % ROC from saved file or recompute if scores+ytrue available
-    if isfield(B,'rocFile') && isfile(B.rocFile)
-        % Just copy existing ROC image alongside figures
-        copyfile(B.rocFile, fullfile(outFigDir,'Fig3_Best_ROC.png'));
-    elseif isfield(B,'scores') && isfield(B,'ytrue') && ~isempty(B.scores) && ~isempty(B.ytrue)
-        try
-            [X,Y,~,AUC] = perfcurve(B.ytrue, B.scores(:), 1);
-            fig = figure('Units','centimeters','Position',[2 2 8 6]);
-            plot(X,Y,'LineWidth',1.5); grid on; axis square
-            xlabel('1 - Specificity'); ylabel('Sensitivity'); 
-            title(sprintf('ROC (AUC=%.3f)',AUC));
-            exportgraphics(fig, fullfile(outFigDir,'Fig3_Best_ROC.pdf'), 'ContentType','vector');
-            close(fig);
-        catch ME
-            warning('Could not create ROC curve: %s', ME.message);
-        end
+    if isfield(R(i),'probeTable') && istable(R(i).probeTable) && ...
+            all(ismember({'TrueLabel','PredLabel','MeanProbWHO3'}, R(i).probeTable.Properties.VariableNames))
+        % Confusion matrix from probe-level predictions
+        yTrue = R(i).probeTable.TrueLabel;
+        yPred = R(i).probeTable.PredLabel;
+        C = confusionmat(yTrue, yPred, 'Order',[1 3]);
+        plot_confusion_matrix(C, fullfile(outFigDir, sprintf('Confusion_%s.pdf', mdlName)));
+
+        % ROC curve using probe-level probabilities
+        [Xroc,Yroc,~,AUC] = perfcurve(yTrue, R(i).probeTable.MeanProbWHO3, 3);
+        fig = figure('Units','centimeters','Position',[2 2 8 6]);
+        plot(Xroc,Yroc,'LineWidth',1.5); grid on; axis square
+        xlabel('False positive rate'); ylabel('True positive rate');
+        title(sprintf('ROC - %s (AUC %.3f)', mdlName, AUC));
+        exportgraphics(fig, fullfile(outFigDir, sprintf('ROC_%s.pdf', mdlName)), 'ContentType','vector');
+        close(fig);
     end
 end
 
