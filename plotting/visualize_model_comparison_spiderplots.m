@@ -37,7 +37,9 @@ function visualize_model_comparison_spiderplots(cfg, opts, results)
     aucVals = arrayfun(@(r) r.metrics.AUC, results);
     f2Vals  = arrayfun(@(r) r.metrics.F2_WHO3, results);
 
+codex/create-spider-plots-for-auc-and-f2_who3-ly7v2z
     axesLimits = repmat([0.90; 1], 1, numModels);
+
 
     outDir = fullfile(P.figuresPath, 'Phase3', 'ModelComparison');
     if ~isfolder(outDir), mkdir(outDir); end
@@ -45,7 +47,9 @@ function visualize_model_comparison_spiderplots(cfg, opts, results)
     %% AUC spider plot
     figAUC = figure('Name', 'Model Comparison - AUC');
     spider_plot_R2019b(aucVals, 'AxesLabels', modelNames, 'AxesLimits', axesLimits, ...
+ codex/create-spider-plots-for-auc-and-f2_who3-ly7v2z
         'AxesInterval', 10, 'AxesPrecision', 2, 'FillOption', 'on', ...
+
         'FillTransparency', 0.1, 'Color', opts.colorTest, 'LineWidth', 2);
     title('Model Comparison: AUC');
     outBase = fullfile(outDir, sprintf('%s_P3_ModelComparison_AUC', opts.datePrefix));
@@ -55,7 +59,9 @@ function visualize_model_comparison_spiderplots(cfg, opts, results)
     %% F2\_WHO3 spider plot
     figF2 = figure('Name', 'Model Comparison - F2\\_WHO3');
     spider_plot_R2019b(f2Vals, 'AxesLabels', modelNames, 'AxesLimits', axesLimits, ...
+ codex/create-spider-plots-for-auc-and-f2_who3-ly7v2z
         'AxesInterval', 10, 'AxesPrecision', 2, 'FillOption', 'on', ...
+
         'FillTransparency', 0.1, 'Color', opts.colorTest, 'LineWidth', 2);
     title('Model Comparison: F2\\_WHO3');
     outBase = fullfile(outDir, sprintf('%s_P3_ModelComparison_F2WHO3', opts.datePrefix));
