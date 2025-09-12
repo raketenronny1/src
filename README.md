@@ -37,7 +37,7 @@ The core scripts rely on MATLAB data files stored under `data/`:
 - MATLAB R2021b or newer
 - **Statistics and Machine Learning Toolbox** (for LDA, cross-validation and `fscmrmr`)
 - **Signal Processing Toolbox** (for spectral smoothing via Savitzky–Golay filtering)
-- `spider_plot_R2019b` from MATLAB Central File Exchange (<https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot>) for radar/spider plots
+This repository includes a lightweight spider plot helper function for generating radar charts; no external downloads are required.
 
 ## Configuration helper
 
@@ -101,11 +101,10 @@ Outputs appear in `results/Phase4` and `figures/Phase4`.
 ### Visualizing project results
 
 After completing Phases 2–4 you can summarise the pipeline outputs with
-`plotting/visualize_project_summary.m`. This script depends on the
-`spider_plot_R2019b` helper referenced in the requirements above—download it
-from the [MATLAB Central File Exchange](https://www.mathworks.com/matlabcentral/fileexchange/59561-spider_plot)
-and add it to your MATLAB path if necessary. Running the script generates
-publication-ready plots under `figures/ProjectSummaryFigures`.
+`plotting/visualize_project_summary.m`. The repository ships with a small
+`spider_plot_R2019b.m` utility used by this script, so no external dependencies
+are needed. Running the script generates publication-ready plots under
+`figures/ProjectSummaryFigures`.
 
 A helper menu `plotting/run_visualization_menu.m` lets you choose which figures
 to create. Other scripts that produce figures are:
