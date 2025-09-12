@@ -54,7 +54,12 @@ end
 %% Cross-validation setup
 numOuterFolds = 5; numInnerFolds = 3;
 [uniqueProbes,~,groupIdx] = unique(probeIDs_full,'stable');
-outerCV = cvpartition(uniqueProbes,'KFold',numOuterFolds);
+% Use the number of unique probes (patients) for K-fold CV. Passing the
+% vector of probe IDs directly to cvpartition treats each ID as a class
+% label and triggers warnings when some folds lack particular IDs. Using
+% the count avoids unintended stratification and evenly partitions the
+% probes across folds.
+outerCV = cvpartition(length(uniqueProbes),'KFold',numOuterFolds);
 metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
     'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
 
