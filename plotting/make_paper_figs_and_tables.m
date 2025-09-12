@@ -12,8 +12,9 @@ set(groot,'defaultAxesFontName','Helvetica','defaultAxesFontSize',9);
 set(groot,'defaultTextInterpreter','none'); % keep labels literal
 
 %% === Paths (edit if needed) ===
-phase2File = '20250912_Phase2_AllPipelineResults.mat';
-phase3File = '20250912_Phase3_ComparisonResults.mat';
+analysisDate = '20250912'; % <-- EDIT THIS DATE FOR NEW ANALYSES
+phase2File = sprintf('%s_Phase2_AllPipelineResults.mat', analysisDate);
+phase3File = sprintf('%s_Phase3_ComparisonResults.mat', analysisDate);
 outTabDir  = fullfile(pwd,'tables');   if ~exist(outTabDir,'dir'), mkdir(outTabDir); end
 outFigDir  = fullfile(pwd,'figures');  if ~exist(outFigDir,'dir'), mkdir(outFigDir); end
 
@@ -29,11 +30,11 @@ MEAN = nan(P, numel(metricNames));
 SD   = nan(P, numel(metricNames));
 RAW  = cell(P,1);
 for p = 1:P
-    r = S2.resultsPerPipeline{p};
+    r = S2.resultsPerPipeline(p);
     pipeNames(p) = string(r.pipelineConfig.name);
-    RAW{p}      = r.outerFoldMetrics_raw;               % (Kouter x M)
-    MEAN(p,:)   = r.outerFoldMetrics_mean(:)';
-    SD(p,:)     = std(RAW{p}, 0, 1, 'omitnan');         % sample SD across outer folds
+    RAW{p}       = r.outerFoldMetrics_raw;             % (Kouter x M)
+    MEAN(p,:)    = r.outerFoldMetrics_mean(:)';
+    SD(p,:)      = std(RAW{p}, 0, 1, 'omitnan');       % sample SD across outer folds
 end
 
 % === Table 1: Nested CV comparison (mean ± SD) ===
@@ -85,13 +86,12 @@ for p = 1:P
     hpCells = S2.resultsPerPipeline(p).outerFoldBestHyperparams;
     names = fieldnames(hpCells(1));
     for k = 1:numel(names)
-        v = arrayfun(@(h) h.(names{k}), hpCells, 'UniformOutput', false);
+        v = arrayfun(@(h) h.(names{k}), hpCells);
         key = names{k};
         if ~isfield(HP, key), HP.(key) = table(); end
-        % Count frequencies per pipeline (supports nonnumeric/non-scalar values)
-        vStr = string(cellfun(@hp_val2str, v, 'UniformOutput', false));
-        cats = unique(vStr);
-        cnts = arrayfun(@(c) sum(vStr==c), cats);
+        % Count frequencies per pipeline
+        cats = unique(v);
+        cnts = arrayfun(@(c) sum(v==c), cats); % CORRECTED: Removed flawed cellfun line
         T = table(string(pipeNames(p)), categorical(cats(:)), cnts(:), ...
             'VariableNames', {'Pipeline', 'Value', 'Count'});
         HP.(key) = [HP.(key); T];
@@ -133,16 +133,24 @@ end
 if hasProbe
     T2 = array2table(MET_PROBE, 'VariableNames', cellstr(metricNames));
     T2 = addvars(T2, pipeNames3, 'Before', 1, 'NewVariableNames','Pipeline');
-    % bold best per metric
+    writetable(T2, fullfile(outTabDir,'Table2_Probe_Comparison.csv'));
+
+    % Format table for LaTeX output
     T2_tex = T2;
     for m = 1:numel(metricNames)
-        [~,ix] = max(MET_PROBE(:,m));
-        T2_tex{ix, m+1} = {sprintf('\\textbf{%.3f}', MET_PROBE(ix,m))};
-        for r = setdiff(1:P3, ix)'
-            T2_tex{r, m+1} = {sprintf('%.3f', MET_PROBE(r,m))};
-        end
+        metric_col = MET_PROBE(:,m);
+        [~,ix] = max(metric_col);
+
+        % Convert entire column to formatted strings in a cell array
+        formatted_col = arrayfun(@(x) sprintf('%.3f', x), metric_col, 'UniformOutput', false);
+        
+        % Bold the best one
+        formatted_col{ix} = sprintf('\\textbf{%.3f}', metric_col(ix));
+
+        % Place the formatted cell column back into the table
+        T2_tex.(metricNames(m)) = formatted_col;
     end
-    writetable(T2, fullfile(outTabDir,'Table2_Probe_Comparison.csv'));
+    
     table2latex(T2_tex, fullfile(outTabDir,'Table2_Probe_Comparison.tex'), ...
         'Caption', 'Performance on held-out probe set.', ...
         'Label', 'tab:probe_comparison');
@@ -182,7 +190,7 @@ end
 
 %% === Optional: Paired significance test across pipelines (outer folds) ===
 % Example: Wilcoxon signed-rank test comparing AUC distributions across folds
-if aucIdx>0
+if aucIdx>0 && any(strcmp(pipeNames, "BaselineLDA"))
     fprintf('\nPaired Wilcoxon on outer-fold AUC (BaselineLDA vs others):\n');
     base = RAW{pipeNames=="BaselineLDA"}(:,aucIdx);
     for p = 1:P
@@ -199,19 +207,9 @@ end
 %% === Helpers ===
 function s = orderfields_from(metricNames)
     % Returns a struct with matching metric order to use with orderfields
+    s = struct();
     for i = 1:numel(metricNames)
         s.(metricNames{i}) = [];
-    end
-end
-
-function s = hp_val2str(v)
-    % Convert hyperparameter values of arbitrary type to comparable strings
-    if ischar(v) || isstring(v)
-        s = string(v);
-    elseif isnumeric(v) && isscalar(v)
-        s = string(v);
-    else
-        s = string(mat2str(v));
     end
 end
 
@@ -228,22 +226,29 @@ fprintf(fid, '\\begin{tabular}{l%s}\\toprule\n', repmat('c',1, width(T)-1));
 % header
 fprintf(fid, '%s', T.Properties.VariableNames{1});
 for j = 2:width(T)
-    fprintf(fid, ' & %s', strrep(T.Properties.VariableNames{j},'_','\\_'));
+    fprintf(fid, ' & %s', strrep(T.Properties.VariableNames{j},'_','\_'));
 end
-fprintf(fid, ' \\ \\midrule\n');
+fprintf(fid, ' \\\\ \\midrule\n');
 % rows
 for i = 1:height(T)
-    fprintf(fid, '%s', string(table2cell(T(i,1))));
-    for j = 2:width(T)
-        cellstrVal = table2cell(T(i,j));
-        if ischar(cellstrVal{1}) || isstring(cellstrVal{1})
-            txt = string(cellstrVal{1});
-        else
-            txt = sprintf('%.3f', cellstrVal{1});
+    for j = 1:width(T)
+        cellVal = T{i,j};
+        % If the cell already contains a cell (from pre-formatting), extract its content
+        if iscell(cellVal), cellVal = cellVal{1}; end
+
+        if ischar(cellVal) || isstring(cellVal)
+            txt = string(cellVal);
+        else % Assume numeric
+            txt = sprintf('%.3f', cellVal);
         end
-        fprintf(fid, ' & %s', txt);
+        
+        if j == 1
+            fprintf(fid, '%s', txt);
+        else
+            fprintf(fid, ' & %s', txt);
+        end
     end
-    fprintf(fid, ' \\ \n');
+    fprintf(fid, ' \\\\ \n');
 end
 fprintf(fid, '\\bottomrule\n\\end{tabular}\n');
 if ~isempty(cap), fprintf(fid, '\\caption{%s}\n', cap); end

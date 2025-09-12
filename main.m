@@ -10,7 +10,7 @@ cfg = configure_cfg();
 
 % Choose whether to run Phase 2 on the outlier-filtered training set or on
 % the unaltered data.
-cfg.useOutlierRemoval = true;  % set to false to analyse the full dataset
+cfg.useOutlierRemoval = false;  % set to false to analyse the full dataset
 
 run_phase2_model_selection(cfg);
 run_phase3_final_evaluation(cfg);
