@@ -19,7 +19,7 @@ if ~isfolder(modelsPath); mkdir(modelsPath); end
 
 %% Load training data
 if isfield(cfg,'useOutlierRemoval') && cfg.useOutlierRemoval
-    cleanedFiles = dir(fullfile(dataPath,'*_training_set_no_outliers*.mat'));
+    cleanedFiles = dir(fullfile(dataPath,'*training_set_no_outliers*.mat'));
     if isempty(cleanedFiles)
         error('No cleaned training set found in %s.', dataPath);
     end
