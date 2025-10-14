@@ -44,8 +44,10 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
     end
 
     % --- Feature selection ---
-    model.featureSelectionMethod = pipelineConfig.feature_selection_method;
-    switch lower(pipelineConfig.feature_selection_method)
+    requestedFeatureMethod = lower(pipelineConfig.feature_selection_method);
+    model.requestedFeatureSelectionMethod = requestedFeatureMethod;
+    model.featureSelectionMethod = requestedFeatureMethod;
+    switch requestedFeatureMethod
         case 'fisher'
             if isfield(hyperparams, 'fisherFeaturePercent')
                 numFeat = ceil(hyperparams.fisherFeaturePercent * size(Xp,2));
@@ -95,6 +97,12 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
             end
             selectedWn = [];
             model.selectedFeatureIndices = selectedIdx; % not used but keep for completeness
+            if isempty(model.PCACoeff) || isempty(model.PCAMu)
+                % PCA was not successfully estimated; fall back to using the raw
+                % features so downstream application code does not expect the PCA
+                % parameters to exist.
+                model.featureSelectionMethod = 'none';
+            end
 
         case 'mrmr'
             if isfield(hyperparams, 'mrmrFeaturePercent')
