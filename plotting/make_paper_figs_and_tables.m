@@ -32,11 +32,21 @@ for i = 1:length(required_fields)
     end
 end
 
+% Normalise resultsPerPipeline to a cell array of structs for easier handling
+raw_pipelines = S2.resultsPerPipeline;
+if iscell(raw_pipelines)
+    pipeline_cells = raw_pipelines(:);
+elseif isstruct(raw_pipelines)
+    pipeline_cells = num2cell(raw_pipelines(:));
+else
+    error('Unsupported type for resultsPerPipeline: %s', class(raw_pipelines));
+end
+
 metricNames = string(S2.metricNames(:)');
 Kouter = S2.numOuterFolds; Kinner = S2.numInnerFolds;
 
 % Collect mean and per-fold metrics for each pipeline
-P = numel(S2.resultsPerPipeline);
+P = numel(pipeline_cells);
 pipeNames = strings(P,1);
 MEAN = nan(P, numel(metricNames));
 SD   = nan(P, numel(metricNames));
@@ -45,15 +55,15 @@ RAW  = cell(P,1);
 % Debug: Print available fields in first pipeline
 if P > 0
     fprintf('Available fields in resultsPerPipeline(1):\n');
-    disp(fieldnames(S2.resultsPerPipeline(1)));
-    if isfield(S2.resultsPerPipeline(1), 'pipelineConfig')
+    disp(fieldnames(pipeline_cells{1}));
+    if isfield(pipeline_cells{1}, 'pipelineConfig')
         fprintf('Available fields in pipelineConfig:\n');
-        disp(fieldnames(S2.resultsPerPipeline(1).pipelineConfig));
+        disp(fieldnames(pipeline_cells{1}.pipelineConfig));
     end
 end
 
 for p = 1:P
-    r = S2.resultsPerPipeline(p);
+    r = pipeline_cells{p};
     
     % Extract pipeline name (try multiple possible field names)
     if isfield(r, 'pipelineConfig') && isfield(r.pipelineConfig, 'name')
@@ -189,12 +199,13 @@ close(fig);
 % === Table S1: Hyperparameter stability across folds ===
 HP = struct();  % struct of arrays
 for p = 1:P
-    if ~isfield(S2.resultsPerPipeline(p), 'outerFoldBestHyperparams')
+    r = pipeline_cells{p};
+    if ~isfield(r, 'outerFoldBestHyperparams')
         warning('Pipeline %d missing hyperparameter data', p);
         continue;
     end
-    
-    hpCells = S2.resultsPerPipeline(p).outerFoldBestHyperparams;
+
+    hpCells = r.outerFoldBestHyperparams;
     if isempty(hpCells)
         continue;
     end
