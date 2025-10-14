@@ -1,623 +1,225 @@
 %% exploratory_pca_mwu_analysis.m
-%
-% Exploratory principal component analysis (PCA) and Mann--Whitney U
-% (Wilcoxon rank-sum) testing for FT-IR spectra comparing WHO-1 vs WHO-3
-% probes. This script aggregates spectra from the selected dataset,
-% performs PCA for visualization, evaluates per-wavenumber statistical
-% significance, and visualizes mean spectra with variability bands.
-%
-% Usage:
-%   - Adjust the `analyzeDataset` variable below to switch between the
-%     training and testing spectral tables ("train" or "test").
-%   - The script assumes `setup_project_paths` and
-%     `flatten_spectra_for_pca` are available on the MATLAB path, and that
-%     the data tables only contain WHO-1 and WHO-3 probes (WHO-2 removed
-%     beforehand).
-%
-% The output includes:
-%   1. PCA scatter plot (PC1 vs PC2) with convex hulls per group.
-%   2. Extended PCA figure combining PC1 vs PC2, PC2 vs PC3, and a 3D
-%      PC1/PC2/PC3 view coloured by WHO grade.
-%   3. Mann--Whitney U p-value plot across wavenumbers with annotations
-%      for the most significant differences.
-%   4. Volcano plot contrasting effect size (median difference) against
-%      statistical significance.
-%   5. Mean spectra with \pm 1 standard deviation shading for each group
-%      displayed in a dual-panel layout.
-%   6. Spectral heatmaps for individual spectra (grouped by WHO grade)
-%      and group-wise means.
-%   7. Command-window summary of top wavenumbers ranked by significance.
-%   8. Table of differentially absorbed wavenumbers (DAWNs) available in
-%      the MATLAB workspace (and optional CSV export).
-%
-% Date: 2025-05-20
-%
+% Exploratory PCA and Mann-Whitney U Testing of FT-IR Spectra (WHO-1 vs WHO-3)
 
-%% ---------------------------------------------------------------------
-%  0. User configuration
-% ----------------------------------------------------------------------
-% Choose which dataset to analyse: 'train' or 'test'.
+%% User Settings
 analyzeDataset = 'train';
-
-% Number of top-ranked wavenumbers to display in the textual summary.
+binSize = 4;
 topNToDisplay = 10;
 
-%% ---------------------------------------------------------------------
-%  1. Load data and flatten spectra
-% ----------------------------------------------------------------------
+%% Load Data
 P = setup_project_paths(pwd);
 dataPath = P.dataPath;
-
-trainPath = fullfile(dataPath, 'data_table_train.mat');
-testPath  = fullfile(dataPath, 'data_table_test.mat');
-wavenumberPath = fullfile(dataPath, 'wavenumbers.mat');
-
-if exist(trainPath, 'file') ~= 2 || exist(testPath, 'file') ~= 2
-    error('Required data tables were not found in %s.', dataPath);
-end
-
-load(trainPath, 'dataTableTrain');
-load(testPath,  'dataTableTest');
-load(wavenumberPath, 'wavenumbers_roi');
+load(fullfile(dataPath, 'data_table_train.mat'), 'dataTableTrain');
+load(fullfile(dataPath, 'data_table_test.mat'),  'dataTableTest');
+load(fullfile(dataPath, 'wavenumbers.mat'), 'wavenumbers_roi');
 
 if iscolumn(wavenumbers_roi)
     wavenumbers_roi = wavenumbers_roi';
 end
 
-switch lower(string(analyzeDataset))
-    case "train"
-        analyzeTable = dataTableTrain;
-        datasetLabel = 'Training';
-    case "test"
-        analyzeTable = dataTableTest;
-        datasetLabel = 'Testing';
-    otherwise
-        error('Unknown analyzeDataset value: %s (use "train" or "test").', analyzeDataset);
+switch lower(analyzeDataset)
+    case 'train', analyzeTable = dataTableTrain; datasetLabel = 'Training';
+    case 'test',  analyzeTable = dataTableTest;  datasetLabel = 'Testing';
+    otherwise, error('Invalid dataset.');
 end
 
-% Filter to WHO-1 / WHO-3 rows only (in case WHO-2 slipped through).
+% Filter for WHO-1 / WHO-3
 if ismember('WHO_Grade', analyzeTable.Properties.VariableNames)
-    whoGradesRaw = analyzeTable.WHO_Grade;
-    keepMask = true(height(analyzeTable), 1);
-    whoGradesText = {};
+    gradeStr = upper(strrep(string(analyzeTable.WHO_Grade), ' ', ''));
+    keepMask = ismember(gradeStr, {'WHO-1','WHO3','WHO-3'});
+    analyzeTable = analyzeTable(keepMask,:);
+end
 
-    if iscategorical(whoGradesRaw)
-        whoGradesText = cellstr(whoGradesRaw);
-    elseif isstring(whoGradesRaw)
-        whoGradesText = cellstr(whoGradesRaw);
-    elseif iscellstr(whoGradesRaw)
-        whoGradesText = whoGradesRaw;
-    elseif isnumeric(whoGradesRaw)
-        warning(['WHO_Grade is numeric; expecting WHO-1/WHO-3 labels. ', ...
-                 'Skipping grade-based filtering.']);
+%% Flatten by MeanSpectrum (1 row per probe)
+nWaves = length(wavenumbers_roi);
+numProbes = height(analyzeTable);
+X_flat_mean = nan(numProbes, nWaves);
+y_num = nan(numProbes,1);
+
+for i = 1:numProbes
+    if ~ismissing(analyzeTable.WHO_Grade(i)) && ~isempty(analyzeTable.MeanSpectrum{i})
+        ms = analyzeTable.MeanSpectrum{i};
+        if size(ms,2) == nWaves
+            X_flat_mean(i,:) = ms;
+        end
+        label = upper(strrep(string(analyzeTable.WHO_Grade(i)), ' ', ''));
+        y_num(i) = strcmp(label, 'WHO-3') * 3 + strcmp(label, 'WHO-1') * 1;
+    end
+end
+
+% Remove rows with all NaNs
+validRows = all(~isnan(X_flat_mean), 2);
+X_flat_mean = X_flat_mean(validRows, :);
+y_num = y_num(validRows);
+
+idxWHO1 = y_num == 1;
+idxWHO3 = y_num == 3;
+
+%% Limit ROI to 1800–950 cm⁻¹
+roiMask = (wavenumbers_roi <= 1800) & (wavenumbers_roi >= 950);
+wavenumbers_roi = wavenumbers_roi(roiMask);
+X_flat_mean = X_flat_mean(:, roiMask);
+
+%% PCA (on z-scored mean spectra in ROI)
+[~,score,~,~,explained,coeff] = pca(zscore(X_flat_mean));
+colors = {[0.90 0.60 0.40], [0.40 0.70 0.90]};
+
+figure('Name', 'PCA Views (mean spectra)', 'Position', [100 100 1000 800]);
+tiledlayout(2,2);
+
+% PC1 vs PC2
+nexttile;
+scatter(score(idxWHO1,1),score(idxWHO1,2),36,colors{1},'filled'); hold on;
+scatter(score(idxWHO3,1),score(idxWHO3,2),36,colors{2},'filled');
+xlabel(sprintf('PC1 (%.1f%%)', explained(1)));
+ylabel(sprintf('PC2 (%.1f%%)', explained(2)));
+title('PC1 vs PC2'); grid on;
+
+% PC2 vs PC3
+nexttile;
+scatter(score(idxWHO1,2),score(idxWHO1,3),36,colors{1},'filled'); hold on;
+scatter(score(idxWHO3,2),score(idxWHO3,3),36,colors{2},'filled');
+xlabel(sprintf('PC2 (%.1f%%)', explained(2)));
+ylabel(sprintf('PC3 (%.1f%%)', explained(3)));
+title('PC2 vs PC3'); grid on;
+
+% 3D PCA
+nexttile([1 2]);
+scatter3(score(idxWHO1,1),score(idxWHO1,2),score(idxWHO1,3),36,colors{1},'filled'); hold on;
+scatter3(score(idxWHO3,1),score(idxWHO3,2),score(idxWHO3,3),36,colors{2},'filled');
+xlabel(sprintf('PC1 (%.1f%%)', explained(1)));
+ylabel(sprintf('PC2 (%.1f%%)', explained(2)));
+zlabel(sprintf('PC3 (%.1f%%)', explained(3)));
+title('3D PCA'); grid on; view(45,30);
+
+
+%% Binning before MWU
+nBins = floor(length(wavenumbers_roi) / binSize);
+p_vals = nan(1,nBins); med1 = p_vals; med3 = p_vals;
+waveBinCenters = nan(1,nBins);
+
+for b = 1:nBins
+    idx = (b-1)*binSize+1 : b*binSize;
+    vals1 = median(X_flat_mean(idxWHO1, idx),2);
+    vals3 = median(X_flat_mean(idxWHO3, idx),2);
+
+    vals1 = vals1(~isnan(vals1));
+    vals3 = vals3(~isnan(vals3));
+
+    if isempty(vals1) || isempty(vals3)
+        p_vals(b) = NaN;
     else
-        error('Unsupported data type for WHO_Grade column: %s.', class(whoGradesRaw));
+        p_vals(b) = ranksum(vals1, vals3);
     end
 
-    if ~isempty(whoGradesText)
-        keepMask = ismember(whoGradesText, {'WHO-1', 'WHO-3'});
+    med1(b) = median(vals1, 'omitnan');
+    med3(b) = median(vals3, 'omitnan');
+    waveBinCenters(b) = mean(wavenumbers_roi(idx));
+end
+
+p_vals(p_vals==0) = realmin;
+
+% Multiple testing correction (FDR)
+p_fdr = mafdr(p_vals, 'BHFDR', true);
+significant = p_fdr < 0.05;
+[~,sortedIdx] = sort(p_vals, 'ascend');
+
+%% MWU Significance Plot
+figure('Name','MWU Significance');
+stem(waveBinCenters, -log10(p_vals), 'filled'); hold on;
+yline(-log10(0.05), '--r', 'p=0.05');
+xlabel('Wavenumber (cm^{-1})');
+ylabel('-log_{10}(p-value)');
+title('Binned MWU Test');
+xlim([950 1800]); set(gca,'XDir','reverse');
+
+for i = 1:min(topNToDisplay, numel(p_vals))
+    idx = sortedIdx(i);
+    if significant(idx)
+        text(waveBinCenters(idx), -log10(p_vals(idx))+0.5, '*', 'FontSize',12,'HorizontalAlignment','center');
     end
-
-    analyzeTable = analyzeTable(keepMask, :);
-
-    if height(analyzeTable) == 0
-        error(['No WHO-1/WHO-3 entries remain after filtering. ', ...
-               'Check the WHO_Grade values in the selected dataset.']);
-    end
+    text(waveBinCenters(idx), -log10(p_vals(idx))+0.2, sprintf('%.1f', waveBinCenters(idx)), 'FontSize',8, 'HorizontalAlignment','center');
 end
 
-[X_flat, y_num] = flatten_spectra_for_pca(analyzeTable, length(wavenumbers_roi));
+%% Mean Spectra Plot
+figure('Name','Mean Spectra','Position',[100 100 800 500]);
+tiledlayout(1,2);
 
-if isempty(X_flat)
-    error('No spectra were flattened. Check the input table contents.');
-end
+mean1 = mean(X_flat_mean(idxWHO1,:),1); std1 = std(X_flat_mean(idxWHO1,:),0,1);
+mean3 = mean(X_flat_mean(idxWHO3,:),1); std3 = std(X_flat_mean(idxWHO3,:),0,1);
 
-%% ---------------------------------------------------------------------
-%  2. Perform PCA
-% ----------------------------------------------------------------------
-[~, score, ~, ~, explained] = pca(X_flat);
+nexttile;
+fill([wavenumbers_roi fliplr(wavenumbers_roi)], [mean1-std1 fliplr(mean1+std1)], ...
+     colors{1}, 'FaceAlpha', 0.2, 'EdgeColor','none'); hold on;
+plot(wavenumbers_roi, mean1, 'Color', colors{1}, 'LineWidth',2);
+title('WHO-1'); set(gca,'XDir','reverse'); xlim([950 1800]);
+xlabel('Wavenumber (cm^{-1})'); ylabel('Absorbance (A.U.)');
 
-% Extract group indices for later use.
-idxWHO1 = (y_num == 1);
-idxWHO3 = (y_num == 3);
+nexttile;
+fill([wavenumbers_roi fliplr(wavenumbers_roi)], [mean3-std3 fliplr(mean3+std3)], ...
+     colors{2}, 'FaceAlpha', 0.2, 'EdgeColor','none'); hold on;
+plot(wavenumbers_roi, mean3, 'Color', colors{2}, 'LineWidth',2);
+title('WHO-3'); set(gca,'XDir','reverse'); xlim([950 1800]);
+xlabel('Wavenumber (cm^{-1})'); ylabel('Absorbance (A.U.)');
 
-if ~any(idxWHO1) || ~any(idxWHO3)
-    error('Both WHO-1 and WHO-3 groups must be present for analysis.');
-end
+%% Heatmap (individual spectra)
+[X_flat, ~] = flatten_spectra_for_pca(analyzeTable, length(wavenumbers_roi));
+X_flat = X_flat(:, roiMask);
+X_flat = X_flat(validRows,:); % reorder to match filtered data
+X_flat = [X_flat(idxWHO1,:); X_flat(idxWHO3,:)];
 
-%% ---------------------------------------------------------------------
-%  3. PCA scatter plot with convex hulls
-% ----------------------------------------------------------------------
-figure('Name', sprintf('PCA Scores: %s WHO-1 vs WHO-3', datasetLabel), ...
-       'Position', [100 100 720 600]);
-hold on; box on; grid on;
+figure('Name','Spectral Heatmap');
+imagesc(wavenumbers_roi, 1:size(X_flat,1), X_flat);
+set(gca,'XDir','reverse'); colormap parula; colorbar;
+xlabel('Wavenumber (cm^{-1})'); ylabel('Spectrum Index');
+title('All Spectra Heatmap');
+yline(sum(idxWHO1), 'k--', 'LineWidth',1.2);
+text(1820, sum(idxWHO1)/2, 'WHO-1', 'FontSize',10,'Rotation',90);
+text(1820, sum(idxWHO1)+(sum(idxWHO3)/2), 'WHO-3', 'FontSize',10,'Rotation',90);
+yline(sum(idxWHO1), 'k--', 'LineWidth',1.2);
+text(1820, sum(idxWHO1)/2, 'WHO-1', 'FontSize',10,'Rotation',90);
+text(1820, sum(idxWHO1)+(sum(idxWHO3)/2), 'WHO-3', 'FontSize',10,'Rotation',90);
+yline(sum(idxWHO1), 'k--', 'LineWidth',1.2);
+text(1820, sum(idxWHO1)/2, 'WHO-1', 'FontSize',10,'Rotation',90);
+text(1820, sum(idxWHO1)+(sum(idxWHO3)/2), 'WHO-3', 'FontSize',10,'Rotation',90);
 
-colorWHO1 = [0.90, 0.60, 0.40];
-colorWHO3 = [0.40, 0.70, 0.90];
-markerSize = 42;
 
-scatter(score(idxWHO1,1), score(idxWHO1,2), markerSize, 'o', ...
-    'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-1');
-scatter(score(idxWHO3,1), score(idxWHO3,2), markerSize, 's', ...
-    'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-3');
+%% Outlier Detection in PCA Space (PC1–PC3)
+scoresUsed = score(:,1:3);  % Verwende PC1–3 für Distanzberechnung
+mahalD = mahal(scoresUsed, scoresUsed);
 
-scoreWHO1 = score(idxWHO1, 1:2);
-scoreWHO3 = score(idxWHO3, 1:2);
+% Top 3 Ausreißer nach Mahalanobis-Distanz
+[sortedD, sortedIdx] = sort(mahalD, 'descend');
+topOutliers = sortedIdx(1:3);
 
-if size(scoreWHO1,1) >= 3
-    hull1 = convhull(scoreWHO1(:,1), scoreWHO1(:,2));
-    patch(scoreWHO1(hull1,1), scoreWHO1(hull1,2), colorWHO1, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO1, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-if size(scoreWHO3,1) >= 3
-    hull3 = convhull(scoreWHO3(:,1), scoreWHO3(:,2));
-    patch(scoreWHO3(hull3,1), scoreWHO3(hull3,2), colorWHO3, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO3, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-xlabel(sprintf('PC1 (%.1f%%)', explained(1)), 'Interpreter', 'latex');
-ylabel(sprintf('PC2 (%.1f%%)', explained(2)), 'Interpreter', 'latex');
-title(sprintf('PCA: %s Set (WHO-1 vs WHO-3)', datasetLabel), 'Interpreter', 'latex');
-legend('Location', 'best', 'Interpreter', 'latex');
-set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-axis tight;
-hold off;
-
-%% Extended PCA views (PC1 vs PC2, PC2 vs PC3, and 3D)
-figure('Name', sprintf('Extended PCA Views: %s WHO-1 vs WHO-3', datasetLabel), ...
-       'Position', [120 120 1000 800]);
-tlPCA = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-
-% Tile 1: PC1 vs PC2 (replicates key view for comparison)
-nexttile(tlPCA);
-hold on; box on; grid on;
-scatter(score(idxWHO1,1), score(idxWHO1,2), markerSize, 'o', ...
-    'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-1');
-scatter(score(idxWHO3,1), score(idxWHO3,2), markerSize, 's', ...
-    'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-3');
-
-if size(scoreWHO1,1) >= 3
-    hull1 = convhull(scoreWHO1(:,1), scoreWHO1(:,2));
-    patch(scoreWHO1(hull1,1), scoreWHO1(hull1,2), colorWHO1, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO1, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-if size(scoreWHO3,1) >= 3
-    hull3 = convhull(scoreWHO3(:,1), scoreWHO3(:,2));
-    patch(scoreWHO3(hull3,1), scoreWHO3(hull3,2), colorWHO3, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO3, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-xlabel(sprintf('PC1 (%.1f%%)', explained(1)), 'Interpreter', 'latex');
-ylabel(sprintf('PC2 (%.1f%%)', explained(2)), 'Interpreter', 'latex');
-title('PC1 vs PC2', 'Interpreter', 'latex');
-set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-legend('Location', 'best', 'Interpreter', 'latex');
-hold off;
-
-% Tile 2: PC2 vs PC3
-nexttile(tlPCA);
-hold on; box on; grid on;
-scatter(score(idxWHO1,2), score(idxWHO1,3), markerSize, 'o', ...
-    'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-1');
-scatter(score(idxWHO3,2), score(idxWHO3,3), markerSize, 's', ...
-    'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-3');
-
-scoreWHO1_23 = score(idxWHO1, 2:3);
-scoreWHO3_23 = score(idxWHO3, 2:3);
-
-if size(scoreWHO1_23,1) >= 3
-    hull1_23 = convhull(scoreWHO1_23(:,1), scoreWHO1_23(:,2));
-    patch(scoreWHO1_23(hull1_23,1), scoreWHO1_23(hull1_23,2), colorWHO1, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO1, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-if size(scoreWHO3_23,1) >= 3
-    hull3_23 = convhull(scoreWHO3_23(:,1), scoreWHO3_23(:,2));
-    patch(scoreWHO3_23(hull3_23,1), scoreWHO3_23(hull3_23,2), colorWHO3, ...
-        'FaceAlpha', 0.18, 'EdgeColor', colorWHO3, 'LineWidth', 1.2, ...
-        'HandleVisibility', 'off');
-end
-
-xlabel(sprintf('PC2 (%.1f%%)', explained(2)), 'Interpreter', 'latex');
-ylabel(sprintf('PC3 (%.1f%%)', explained(3)), 'Interpreter', 'latex');
-title('PC2 vs PC3', 'Interpreter', 'latex');
-set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-legend('Location', 'best', 'Interpreter', 'latex');
-hold off;
-
-% Tile 3: 3D scatter spanning both columns
-nexttile(tlPCA, [1 2]);
-hold on; box on; grid on;
-scatter3(score(idxWHO1,1), score(idxWHO1,2), score(idxWHO1,3), markerSize, 'o', ...
-    'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-1');
-scatter3(score(idxWHO3,1), score(idxWHO3,2), score(idxWHO3,3), markerSize, 's', ...
-    'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k', 'LineWidth', 0.75, ...
-    'DisplayName', 'WHO-3');
-xlabel(sprintf('PC1 (%.1f%%)', explained(1)), 'Interpreter', 'latex');
-ylabel(sprintf('PC2 (%.1f%%)', explained(2)), 'Interpreter', 'latex');
-zlabel(sprintf('PC3 (%.1f%%)', explained(3)), 'Interpreter', 'latex');
-title('3D PCA: PC1 vs PC2 vs PC3', 'Interpreter', 'latex');
-set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-view(45, 28);
-legend('Location', 'best', 'Interpreter', 'latex');
-hold off;
-
-%% ---------------------------------------------------------------------
-%  3b. Probe-level PCA on mean spectra
-% ----------------------------------------------------------------------
-if ismember('CombinedSpectra', analyzeTable.Properties.VariableNames)
-    numProbes = height(analyzeTable);
-    X_flat_mean = nan(numProbes, length(wavenumbers_roi));
-    y_probe = zeros(numProbes, 1);
-
-    for iProbe = 1:numProbes
-        spectra = analyzeTable.CombinedSpectra{iProbe};
-
-        if isempty(spectra)
-            continue;
-        end
-
-        X_flat_mean(iProbe, :) = mean(spectra, 1, 'omitnan');
-
-        gradeStr = string(analyzeTable.WHO_Grade(iProbe));
-        if gradeStr == "WHO-1"
-            y_probe(iProbe) = 1;
-        elseif gradeStr == "WHO-3"
-            y_probe(iProbe) = 3;
-        end
-    end
-
-    validProbeMask = any(~isnan(X_flat_mean), 2) & (y_probe ~= 0);
-    X_flat_mean_valid = X_flat_mean(validProbeMask, :);
-    y_probe_valid = y_probe(validProbeMask);
-
-    if size(X_flat_mean_valid, 1) >= 2
-        [~, score_mean, ~, ~, explained_mean] = pca(X_flat_mean_valid);
-        idxWHO1_probe = (y_probe_valid == 1);
-        idxWHO3_probe = (y_probe_valid == 3);
-
-        figure('Name', sprintf('Probe-level PCA (no contours): %s', datasetLabel), ...
-               'Position', [100, 100, 1000, 800]);
-        tlProbe = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-
-        % PC1 vs PC2
-        nexttile(tlProbe);
-        hold on; box on; grid on;
-        scatter(score_mean(idxWHO1_probe,1), score_mean(idxWHO1_probe,2), markerSize, 'o', ...
-            'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k');
-        scatter(score_mean(idxWHO3_probe,1), score_mean(idxWHO3_probe,2), markerSize, 's', ...
-            'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k');
-        xlabel(sprintf('PC1 (%.1f%%)', explained_mean(1)), 'Interpreter', 'latex');
-        ylabel(sprintf('PC2 (%.1f%%)', explained_mean(2)), 'Interpreter', 'latex');
-        title('PC1 vs PC2', 'Interpreter', 'latex');
-        set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-        legend({'WHO-1','WHO-3'}, 'Location', 'best', 'Interpreter', 'latex');
-
-        % PC2 vs PC3
-        if size(score_mean, 2) >= 3
-            nexttile(tlProbe);
-            hold on; box on; grid on;
-            scatter(score_mean(idxWHO1_probe,2), score_mean(idxWHO1_probe,3), markerSize, 'o', ...
-                'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k');
-            scatter(score_mean(idxWHO3_probe,2), score_mean(idxWHO3_probe,3), markerSize, 's', ...
-                'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k');
-            xlabel(sprintf('PC2 (%.1f%%)', explained_mean(2)), 'Interpreter', 'latex');
-            ylabel(sprintf('PC3 (%.1f%%)', explained_mean(3)), 'Interpreter', 'latex');
-            title('PC2 vs PC3', 'Interpreter', 'latex');
-            set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-        end
-
-        % 3D PCA
-        if size(score_mean, 2) >= 3
-            nexttile(tlProbe, [1 2]);
-            hold on; box on; grid on;
-            scatter3(score_mean(idxWHO1_probe,1), score_mean(idxWHO1_probe,2), score_mean(idxWHO1_probe,3), markerSize, 'o', ...
-                'MarkerFaceColor', colorWHO1, 'MarkerEdgeColor', 'k');
-            scatter3(score_mean(idxWHO3_probe,1), score_mean(idxWHO3_probe,2), score_mean(idxWHO3_probe,3), markerSize, 's', ...
-                'MarkerFaceColor', colorWHO3, 'MarkerEdgeColor', 'k');
-            xlabel(sprintf('PC1 (%.1f%%)', explained_mean(1)), 'Interpreter', 'latex');
-            ylabel(sprintf('PC2 (%.1f%%)', explained_mean(2)), 'Interpreter', 'latex');
-            zlabel(sprintf('PC3 (%.1f%%)', explained_mean(3)), 'Interpreter', 'latex');
-            title('3D PCA: PC1 vs PC2 vs PC3', 'Interpreter', 'latex');
-            set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-            view(45, 30);
-            legend({'WHO-1','WHO-3'}, 'Location', 'best', 'Interpreter', 'latex');
-        end
-    else
-        warning('Not enough valid probes to perform probe-level PCA.');
-    end
+% Zeige deren Patient_ID oder Index
+if ismember('Patient_ID', analyzeTable.Properties.VariableNames)
+    disp('Top PCA Outliers (by Patient_ID):');
+    disp(analyzeTable.Patient_ID(validRows(topOutliers)));
 else
-    warning('CombinedSpectra column not found; skipping probe-level PCA.');
+    disp('Top PCA Outliers (row indices):');
+    disp(validRows(topOutliers));
 end
 
-%% ---------------------------------------------------------------------
-%  4. Apply binning and Mann--Whitney U test
-% ----------------------------------------------------------------------
-binSize = 4;
-numBins = floor(length(wavenumbers_roi) / binSize);
-
-if numBins < 1
-    error('Number of bins is zero. Check the wavenumber range and bin size.');
+% Plotte deren Spektren
+figure('Name','Top PCA Outlier Spectra');
+hold on;
+for i = 1:length(topOutliers)
+    plot(wavenumbers_roi, X_flat_mean(topOutliers(i),:), 'LineWidth', 2);
 end
+set(gca, 'XDir', 'reverse');
+xlabel('Wavenumber (cm^{-1})'); ylabel('Absorbance');
+title('Top Outlier Spectra in PCA Space');
+legend(arrayfun(@(i) sprintf('Outlier %d', i), 1:length(topOutliers), 'UniformOutput', false));
 
-X_binned = nan(size(X_flat, 1), numBins);
-binCenters = nan(1, numBins);
-
-for b = 1:numBins
-    idxStart = (b-1) * binSize + 1;
-    idxEnd = b * binSize;
-    X_binned(:, b) = mean(X_flat(:, idxStart:idxEnd), 2, 'omitnan');
-    binCenters(b) = mean(wavenumbers_roi(idxStart:idxEnd));
-end
-
-p_values = nan(1, numBins);
-medianWHO1 = nan(1, numBins);
-medianWHO3 = nan(1, numBins);
-
-for b = 1:numBins
-    valsWHO1 = X_binned(idxWHO1, b);
-    valsWHO3 = X_binned(idxWHO3, b);
-
-    if all(valsWHO1 == valsWHO1(1)) && all(valsWHO3 == valsWHO3(1)) && valsWHO1(1) == valsWHO3(1)
-        p_values(b) = 1;
-    else
-        p_values(b) = ranksum(valsWHO1, valsWHO3);
-    end
-
-    medianWHO1(b) = median(valsWHO1, 'omitnan');
-    medianWHO3(b) = median(valsWHO3, 'omitnan');
-end
-
-p_values(p_values == 0) = realmin;
-
-medianDiff = medianWHO3 - medianWHO1;
-wavenumbers_mwu = binCenters;
-numWavenumbers = numBins;
-
-MWU_results = struct( ...
-    'wavenumber', num2cell(wavenumbers_mwu), ...
-    'p_value',    num2cell(p_values), ...
-    'median_WHO1', num2cell(medianWHO1), ...
-    'median_WHO3', num2cell(medianWHO3));
-
-dawnBinnedTable = table( ...
-    binCenters', p_values', medianWHO1', medianWHO3', medianDiff', ...
-    'VariableNames', {'Bin_Center_cm1', 'p_value', 'Median_WHO1', 'Median_WHO3', 'Median_Diff'});
-dawnBinnedTable = sortrows(dawnBinnedTable, 'p_value');
-assignin('base', 'dawnBinnedTable', dawnBinnedTable);
-
-%% ---------------------------------------------------------------------
-%  5. Plot p-values across wavenumbers
-% ----------------------------------------------------------------------
-figure('Name', sprintf('Mann-Whitney U p-values: %s', datasetLabel), ...
-       'Position', [120 120 740 520]);
-hold on; box on;
-
-semilogy(wavenumbers_mwu, p_values, 'Color', [0.10 0.30 0.60], 'LineWidth', 1.6, ...
-    'DisplayName', 'p-value');
-
-sigLine = yline(0.05, '--r', 'LineWidth', 1.2, 'DisplayName', 'p = 0.05');
-if isprop(sigLine, 'Label')
-    sigLine.Label = 'p = 0.05';
-    sigLine.LabelHorizontalAlignment = 'left';
-    sigLine.Interpreter = 'latex';
-end
-
-xlabel('Wavenumber (cm^{-1})', 'Interpreter', 'latex');
-ylabel('p-value (Mann--Whitney U)', 'Interpreter', 'latex');
-title(sprintf('Per-Wavenumber Significance: %s Set', datasetLabel), 'Interpreter', 'latex');
-set(gca, 'XDir', 'reverse', 'YScale', 'log', 'FontSize', 12, ...
-    'TickLabelInterpreter', 'latex');
-legend('Location', 'best', 'Interpreter', 'latex');
-
-affordableIdx = find(~isnan(p_values));
-[~, sortedIdxLocal] = sort(p_values(affordableIdx), 'ascend');
-numToAnnotate = min(5, numel(sortedIdxLocal));
-
-for iIdx = 1:numToAnnotate
-    actualIdx = affordableIdx(sortedIdxLocal(iIdx));
-    if p_values(actualIdx) < 0.05
-        plot(wavenumbers_mwu(actualIdx), p_values(actualIdx), 'ko', ...
-            'MarkerFaceColor', [0.85 0.10 0.10], 'MarkerSize', 6, ...
-            'HandleVisibility', 'off');
-        text(wavenumbers_mwu(actualIdx), p_values(actualIdx) * 1.3, ...
-            sprintf('%.0f cm^{-1}', wavenumbers_mwu(actualIdx)), ...
-            'Color', 'k', 'Interpreter', 'latex', 'FontSize', 10, ...
-            'HorizontalAlignment', 'center');
-    end
-end
-
-hold off;
-
-%% ---------------------------------------------------------------------
-%  6. Volcano plot (effect size vs significance)
-% ----------------------------------------------------------------------
-negLogP = -log10(p_values);
-% Threshold (abs median difference) used to emphasise large effect sizes.
-effectSizeThreshold = 0.05;
-
-figure('Name', sprintf('Volcano Plot: %s', datasetLabel), ...
-       'Position', [150 150 780 520]);
-hold on; box on; grid on;
-scatter(medianDiff, negLogP, 24, [0.3 0.3 0.3], 'filled', ...
-    'DisplayName', 'All wavenumbers');
-
-sigMask = p_values < 0.05;
-effectMask = abs(medianDiff) > effectSizeThreshold;
-highlightMask = sigMask & effectMask;
-
-if any(highlightMask)
-    scatter(medianDiff(highlightMask), negLogP(highlightMask), 40, [0.80 0.20 0.20], 'filled', ...
-        'DisplayName', sprintf('p < 0.05 & |median diff| > %.3f', effectSizeThreshold));
-end
-
-xline(0, '--k', 'LineWidth', 1.1, 'DisplayName', '\Delta median = 0');
-yline(-log10(0.05), '--r', 'LineWidth', 1.1, 'DisplayName', 'p = 0.05');
-
-xlabel('Median Difference (WHO-3 $-$ WHO-1)', 'Interpreter', 'latex');
-ylabel('$-\log_{10}(p\text{-value})$', 'Interpreter', 'latex');
-title(sprintf('Volcano Plot of Spectral Differences (%s Set)', datasetLabel), 'Interpreter', 'latex');
-set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-
-[~, topVolcanoIdx] = sort(p_values);
-topNVolcano = min(5, numel(topVolcanoIdx));
-for vIdx = 1:topNVolcano
-    idxNow = topVolcanoIdx(vIdx);
-    text(medianDiff(idxNow), negLogP(idxNow) + 0.2, ...
-        sprintf('%.0f cm$^{-1}$', wavenumbers_mwu(idxNow)), ...
-        'Interpreter', 'latex', 'HorizontalAlignment', 'center', 'FontSize', 10);
-end
-
-legend('Location', 'best', 'Interpreter', 'latex');
-hold off;
-
-%% ---------------------------------------------------------------------
-%  7. Mean spectra with \pm 1 standard deviation shading
-% ----------------------------------------------------------------------
-meanWHO1 = mean(X_flat(idxWHO1, :), 1, 'omitnan');
-meanWHO3 = mean(X_flat(idxWHO3, :), 1, 'omitnan');
-stdWHO1  = std(X_flat(idxWHO1, :), 0, 1, 'omitnan');
-stdWHO3  = std(X_flat(idxWHO3, :), 0, 1, 'omitnan');
-
-roiMask = (wavenumbers_roi >= 950) & (wavenumbers_roi <= 1800);
-
-if any(roiMask)
-    wavenumbers_roi_roi = wavenumbers_roi(roiMask);
-    meanWHO1_roi = meanWHO1(roiMask);
-    meanWHO3_roi = meanWHO3(roiMask);
-    stdWHO1_roi = stdWHO1(roiMask);
-    stdWHO3_roi = stdWHO3(roiMask);
-
-    figure('Name','Mean Spectra: WHO-1 and WHO-3 (1800–950)', 'Position', [140 140 960 520]);
-    tlMeanROI = tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-
-    % WHO-1 mean \pm SD (ROI)
-    nexttile(tlMeanROI);
-    hold on; box on; grid on;
-    fill([wavenumbers_roi_roi, fliplr(wavenumbers_roi_roi)], ...
-         [meanWHO1_roi - stdWHO1_roi, fliplr(meanWHO1_roi + stdWHO1_roi)], ...
-         colorWHO1, 'FaceAlpha', 0.20, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(wavenumbers_roi_roi, meanWHO1_roi, 'Color', colorWHO1, 'LineWidth', 2.0, ...
-        'DisplayName', 'WHO-1 Mean');
-    set(gca, 'XDir', 'reverse', 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-    xlabel('Wavenumber (cm^{-1})', 'Interpreter', 'latex');
-    ylabel('Absorbance (A.U.)', 'Interpreter', 'latex');
-    title('WHO-1 Mean Spectrum', 'Interpreter', 'latex');
-    legend('Location', 'best', 'Interpreter', 'latex');
-    hold off;
-
-    % WHO-3 mean \pm SD (ROI)
-    nexttile(tlMeanROI);
-    hold on; box on; grid on;
-    fill([wavenumbers_roi_roi, fliplr(wavenumbers_roi_roi)], ...
-         [meanWHO3_roi - stdWHO3_roi, fliplr(meanWHO3_roi + stdWHO3_roi)], ...
-         colorWHO3, 'FaceAlpha', 0.20, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(wavenumbers_roi_roi, meanWHO3_roi, 'Color', colorWHO3, 'LineWidth', 2.0, ...
-        'DisplayName', 'WHO-3 Mean');
-    set(gca, 'XDir', 'reverse', 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-    xlabel('Wavenumber (cm^{-1})', 'Interpreter', 'latex');
-    ylabel('Absorbance (A.U.)', 'Interpreter', 'latex');
-    title('WHO-3 Mean Spectrum', 'Interpreter', 'latex');
-    legend('Location', 'best', 'Interpreter', 'latex');
-    hold off;
-
-    sgtitle(tlMeanROI, 'Mean FT-IR Spectra (1800–950 cm^{-1}) \pm 1 SD', 'Interpreter', 'latex');
-else
-    warning('No wavenumbers fall within 950--1800 cm^{-1}; skipping ROI mean spectra figure.');
-end
-
-%% ---------------------------------------------------------------------
-%  8. Spectral heatmaps
-% ----------------------------------------------------------------------
-
-% Heatmap of all spectra grouped by WHO grade
-figure('Name', sprintf('All Spectra Heatmap: %s', datasetLabel), ...
-       'Position', [160 160 900 420]);
-groupedSpectra = [X_flat(idxWHO1, :); X_flat(idxWHO3, :)];
-imagesc(wavenumbers_roi, 1:size(groupedSpectra, 1), groupedSpectra);
-colormap(parula);
+% Optional: Farbiger PCA-Scatter nach Mahalanobis-Distanz
+figure('Name','PCA Scatter colored by Mahalanobis Distance');
+scatter(score(:,1), score(:,2), 40, mahalD, 'filled');
 colorbar;
-set(gca, 'XDir', 'reverse', 'FontSize', 12, 'TickLabelInterpreter', 'latex');
-xlabel('Wavenumber (cm$^{-1}$)', 'Interpreter', 'latex');
-ylabel('Spectrum Index', 'Interpreter', 'latex');
-title('All Spectra Heatmap (Grouped by WHO Grade)', 'Interpreter', 'latex');
+xlabel(sprintf('PC1 (%.1f%%)', explained(1)));
+ylabel(sprintf('PC2 (%.1f%%)', explained(2)));
+title('Mahalanobis Distance in PCA Space');
+grid on;
 
-% Draw separator line between WHO-1 and WHO-3 groups if both present
-if any(idxWHO1) && any(idxWHO3)
-    hold on;
-    yline(sum(idxWHO1) + 0.5, '--k', 'LineWidth', 1.0, 'HandleVisibility', 'off');
-    hold off;
-end
-
-% Mean spectra heatmap
-figure('Name', sprintf('Mean Spectra Heatmap: %s', datasetLabel), ...
-       'Position', [160 160 820 300]);
-imagesc(wavenumbers_roi, 1:2, [meanWHO1; meanWHO3]);
-colormap(parula);
-colorbar;
-set(gca, 'XDir', 'reverse', 'YTick', [1 2], 'YTickLabel', {'WHO-1', 'WHO-3'}, ...
-    'FontSize', 12, 'TickLabelInterpreter', 'latex');
-xlabel('Wavenumber (cm$^{-1}$)', 'Interpreter', 'latex');
-ylabel('Group', 'Interpreter', 'latex');
-title('Mean Spectra Heatmap', 'Interpreter', 'latex');
-
-%% ---------------------------------------------------------------------
-%  9. Print ranked summary of significant wavenumbers
-% ----------------------------------------------------------------------
-validPIdx = find(~isnan(p_values));
-[sortedP, sortedLocalIdx] = sort(p_values(validPIdx));
-
-fprintf('\nTop %d most significant wavenumbers (dataset: %s):\n', ...
-    min(topNToDisplay, numel(sortedP)), datasetLabel);
-fprintf(' Rank | Wavenumber (cm^-1) |    p-value    | Median WHO-1 | Median WHO-3\n');
-fprintf('---------------------------------------------------------------\n');
-for rIdx = 1:min(topNToDisplay, numel(sortedP))
-    globalIdx = validPIdx(sortedLocalIdx(rIdx));
-    fprintf(' %3d  | %9.1f          | %10.3e | %11.4f | %11.4f\n', ...
-        rIdx, wavenumbers_mwu(globalIdx), p_values(globalIdx), ...
-        medianWHO1(globalIdx), medianWHO3(globalIdx));
-end
-
-sigIdx = find(p_values < 0.05 & ~isnan(p_values));
-fprintf('\nNumber of wavenumbers with p < 0.05: %d (out of %d).\n', ...
-    numel(sigIdx), numWavenumbers);
-
-%% ---------------------------------------------------------------------
-% 10. Table of differentially absorbed wavenumbers (DAWNs)
-% ----------------------------------------------------------------------
-if ~isempty(sigIdx)
-    dawnTable = table( ...
-        wavenumbers_mwu(sigIdx)', ...
-        p_values(sigIdx)', ...
-        medianWHO1(sigIdx)', ...
-        medianWHO3(sigIdx)', ...
-        medianDiff(sigIdx)', ...
-        'VariableNames', {'Wavenumber_cm1', 'p_value', 'Median_WHO1', 'Median_WHO3', 'Median_Diff'});
-
-    dawnTable = sortrows(dawnTable, 'p_value', 'ascend');
-
-    assignin('base', 'dawnTable', dawnTable);
-
-    % Optionally save table to disk by uncommenting the line below.
-    % writetable(dawnTable, fullfile(P.resultsPath, sprintf('DAWN_table_%s.csv', lower(datasetLabel))));
-else
-    dawnTable = table([], [], [], [], [], ...
-        'VariableNames', {'Wavenumber_cm1', 'p_value', 'Median_WHO1', 'Median_WHO3', 'Median_Diff'});
-    assignin('base', 'dawnTable', dawnTable);
-end
-
-%% End of script
+%% End
+disp('Exploratory PCA & MWU analysis completed successfully.');
