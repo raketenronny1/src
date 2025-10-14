@@ -42,5 +42,14 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'useOutlierRemoval')
         cfg.useOutlierRemoval = true;
     end
+    if ~isfield(cfg,'parallelOutlierComparison')
+        cfg.parallelOutlierComparison = false;
+    end
+    if ~isfield(cfg,'outlierAlpha')
+        cfg.outlierAlpha = 0.01;
+    end
+    if ~isfield(cfg,'outlierVarianceToModel')
+        cfg.outlierVarianceToModel = 0.95;
+    end
 end
 

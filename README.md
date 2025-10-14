@@ -48,6 +48,7 @@ accepts name/value pairs for overrides.
 ```matlab
 cfg = configure_cfg();
 cfg.useOutlierRemoval = true;   % set false to keep all training data
+cfg.parallelOutlierComparison = true; % evaluate both cleaned and full datasets in parallel
 run('src/main.m')
 ```
 
@@ -74,6 +75,12 @@ The Fisher ratio and MRMR pipelines now select a percentage of the available fea
 ```matlab
 run('src/run_phase2_model_selection.m')
 ```
+
+Set `cfg.parallelOutlierComparison = true` before running the phase to train
+each pipeline twice – once on the full training data and once after removing
+spectra that Hotelling's T² and the Q-statistic both flag as outliers. Separate
+results and model folders are created for each variant so that Phase 3 can
+compare their test-set performance side by side.
 
 Results are saved under `results/Phase2` and models under `models/Phase2`.
 
