@@ -2,17 +2,18 @@ function run_phase3_final_evaluation(cfg)
 %RUN_PHASE3_FINAL_EVALUATION
 %
 % Apply each pipeline model saved in Phase 2 to the test data and compare
-% performance. Outlier removal is no longer performed so the script simply
-% loads the available Phase 2 models, evaluates them on the unseen test set
-% and compares the results with cross‑validation metrics.
-%
-% Date: 2025-06-10
+% performance for different outlier-handling strategies. When Phase 2 was
+% executed with `parallelOutlierComparison`, the script evaluates the
+% resulting model sets separately and reports results for test data with
+% and without joint Hotelling T2 / Q-statistic outliers.
 
 %% 0. Configuration
 if nargin < 1
     cfg = struct();
 end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
+if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
+if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
 
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
@@ -22,7 +23,7 @@ resultsPathP2 = fullfile(cfg.projectRoot,'results','Phase2');
 if ~isfolder(resultsPath); mkdir(resultsPath); end
 if ~isfolder(figuresPath); mkdir(figuresPath); end
 
-%% 1. Load test data
+%% 1. Load test data and build evaluation variants
 fprintf('Loading test set...\n');
 dataPath = P.dataPath;
 load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
@@ -30,120 +31,233 @@ wavenumbers = wavenumbers_roi;
 
 T = load(fullfile(dataPath,'data_table_test.mat'),'dataTableTest');
 dataTableTest = T.dataTableTest;
-numProbes = height(dataTableTest);
-X_list = cell(numProbes,1);
-y_list = cell(numProbes,1);
-probe_list = cell(numProbes,1);
-for i=1:numProbes
-    X_list{i} = dataTableTest.CombinedSpectra{i};
-    lbl = dataTableTest.WHO_Grade(i);
-    if lbl=="WHO-1"; y_tmp = 1; else; y_tmp = 3; end
-    y_list{i} = repmat(y_tmp,size(X_list{i},1),1);
-    probe_list{i} = repmat(dataTableTest.Diss_ID(i),size(X_list{i},1),1);
-end
-X_test = vertcat(X_list{:});
-y_test = vertcat(y_list{:});
-probeIDs_test = vertcat(probe_list{:});
+[X_test, y_test, ~, probeIDs_test] = flatten_spectra_for_pca( ...
+    dataTableTest, length(wavenumbers));
 
-%% 2. Locate models and Phase2 results
-modelFiles = dir(fullfile(modelsPathP2, '*_Phase2_*_Model.mat'));
-if isempty(modelFiles)
+testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg);
+
+%% 2. Locate model sets and Phase 2 results
+modelSets = discover_model_sets(modelsPathP2, resultsPathP2);
+if isempty(modelSets)
     error('No Phase 2 models found in %s.', modelsPathP2);
 end
-% Keep only the most recent model file for each pipeline to avoid duplicates
-fileMap = containers.Map();
-for i = 1:numel(modelFiles)
-    tokens = regexp(modelFiles(i).name,'^\d+_Phase2_(.+)_Model\.mat$','tokens','once');
-    if isempty(tokens); continue; end
-    pipe = tokens{1};
-    if ~isKey(fileMap, pipe) || modelFiles(i).datenum > fileMap(pipe).datenum
-        fileMap(pipe) = modelFiles(i);
-    end
-end
-modelFilesCell = values(fileMap);
-modelFiles = [modelFilesCell{:}];
-[~,order] = sort({modelFiles.name});
-modelFiles = modelFiles(order);
-resFile = dir(fullfile(resultsPathP2,'*_Phase2_AllPipelineResults.mat'));
-if isempty(resFile)
-    warning('Phase 2 results file not found.');
-    cvData = [];
-else
-    [~,idx] = sort([resFile.datenum],'descend');
-    tmp = load(fullfile(resFile(idx(1)).folder,resFile(idx(1)).name));
-    cvData = tmp.resultsPerPipeline;
-    pipelinesCV = tmp.pipelines;
-    metricNames = tmp.metricNames;
-end
 
-%% 3. Evaluate each model
+%% 3. Evaluate models across variants
 metricNamesEval = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1','PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
-results = struct();
-for i=1:numel(modelFiles)
-    mf = fullfile(modelFiles(i).folder,modelFiles(i).name);
-    load(mf,'finalModel','aggHyper','selectedIdx','selectedWn');
-    mdlName = finalModel.featureSelectionMethod;
-    if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
+resultsByVariant = struct('id',{},'description',{},'modelSets',{});
+bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{},'modelFile',{});
 
-    [ypred,score] = apply_model_to_data(finalModel,X_test,wavenumbers);
-    posIdx = find(finalModel.LDAModel.ClassNames==3);
-    m = calculate_performance_metrics(y_test,ypred,score(:,posIdx),3,metricNamesEval);
-    results(i).name = mdlName; %#ok<*AGROW>
-    results(i).metrics = m;
-    results(i).modelFile = mf;
-    results(i).scores = score(:,posIdx);
-    results(i).predicted = ypred;
+for v = 1:numel(testVariants)
+    variant = testVariants(v);
+    fprintf('\nEvaluating test variant: %s\n', variant.description);
+    variantResults = struct('modelSetID',{},'modelSetDescription',{},'models',{});
+    bestScore = -Inf; bestEntry = struct();
 
-    % probe level
-    [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs_test,y_test,score(:,posIdx),ypred,metricNamesEval);
-    results(i).probeTable = probeTable;
-    results(i).probeMetrics = probeMetrics;
+    for s = 1:numel(modelSets)
+        modelSet = modelSets(s);
+        fprintf('  Model set: %s\n', modelSet.description);
+        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath);
+        variantResults(end+1).modelSetID = modelSet.id; %#ok<AGROW>
+        variantResults(end).modelSetDescription = modelSet.description;
+        variantResults(end).models = models;
 
-    % ROC curve
-    [Xroc,Yroc,~,AUC] = perfcurve(y_test,score(:,posIdx),3);
-    fig = figure('Visible','off');
-    plot(Xroc,Yroc,'LineWidth',1.5); grid on;
-    xlabel('False positive rate'); ylabel('True positive rate');
-    title(sprintf('ROC - %s (AUC %.3f)',mdlName,AUC));
-    rocFile = fullfile(figuresPath,sprintf('ROC_%s.png',mdlName));
-    saveas(fig,rocFile); close(fig);
-    results(i).rocFile = rocFile;
-end
-
-%% 4. Compare with CV metrics if available
-if ~isempty(cvData)
-    % Extract the pipeline names from the cell array of structs into a new cell array.
-    % This is the corrected part.
-    pipeline_names_from_cv = cellfun(@(p) p.name, pipelinesCV, 'UniformOutput', false);
-
-    for i=1:numel(results)
-        % Now, compare the name of the current test result with the list of names from CV.
-        idx = find(strcmpi(pipeline_names_from_cv, results(i).name));
-        if ~isempty(idx)
-            results(i).CV_Metrics = cvData{idx}.outerFoldMetrics_mean;
+        % Track best model for this variant based on F2_WHO3
+        for mIdx = 1:numel(models)
+            if isfield(models(mIdx).metrics,'F2_WHO3') && models(mIdx).metrics.F2_WHO3 > bestScore
+                bestScore = models(mIdx).metrics.F2_WHO3;
+                bestEntry.variantID = variant.id;
+                bestEntry.modelSetID = modelSet.id;
+                bestEntry.modelName = models(mIdx).name;
+                bestEntry.metrics = models(mIdx).metrics;
+                bestEntry.modelFile = models(mIdx).modelFile;
+            end
         end
     end
-end
 
-%% Determine best model based on F2_WHO3 on test set
-bestScore = -Inf; bestIdx = 1;
-for i=1:numel(results)
-    if results(i).metrics.F2_WHO3 > bestScore
-        bestScore = results(i).metrics.F2_WHO3;
-        bestIdx = i;
+    resultsByVariant(v).id = variant.id; %#ok<AGROW>
+    resultsByVariant(v).description = variant.description;
+    resultsByVariant(v).modelSets = variantResults;
+    if ~isempty(fieldnames(bestEntry))
+        bestModelInfo(v) = bestEntry; %#ok<AGROW>
     end
 end
-bestModelInfo = results(bestIdx);
 
 %% Save combined results
 dateStr = string(datetime('now','Format','yyyyMMdd'));
-resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ComparisonResults.mat',dateStr));
-save(resultsFile,'results','bestModelInfo');
+resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ParallelComparisonResults.mat',dateStr));
+save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets');
 fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
 
 end
 
 %% Helper functions
+function testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg)
+
+    testVariants = struct('id',{},'description',{},'X',{},'y',{},'probeIDs',{},'mask',{},'outlierInfo',{});
+    baseVariant = struct('id','FullTest', ...
+        'description','All test spectra (no outlier removal)', ...
+        'X', X_test, ...
+        'y', y_test, ...
+        'probeIDs', probeIDs_test, ...
+        'mask', true(size(y_test)), ...
+        'outlierInfo', []);
+    testVariants(end+1) = baseVariant; %#ok<AGROW>
+
+    try
+        outlierStruct = identify_joint_t2q_outliers(X_test, cfg.outlierAlpha, cfg.outlierVarianceToModel);
+        keepMask = outlierStruct.isJointInlier;
+        if any(keepMask) && any(outlierStruct.isJointOutlier)
+            filteredVariant = baseVariant;
+            filteredVariant.id = 'FilteredTest';
+            filteredVariant.description = sprintf('Test spectra without joint T2/Q outliers (%d removed)', ...
+                outlierStruct.numJointOutliers);
+            filteredVariant.X = X_test(keepMask,:);
+            filteredVariant.y = y_test(keepMask);
+            filteredVariant.probeIDs = probeIDs_test(keepMask);
+            filteredVariant.mask = keepMask;
+            filteredVariant.outlierInfo = outlierStruct;
+            testVariants(end+1) = filteredVariant; %#ok<AGROW>
+            fprintf('Joint T2/Q filtering removed %d/%d test spectra.\n', ...
+                outlierStruct.numJointOutliers, numel(keepMask));
+        end
+    catch ME
+        warning('Failed to compute joint outliers on test set: %s', ME.message);
+    end
+end
+
+function modelSets = discover_model_sets(modelsPathP2, resultsPathP2)
+
+    modelSets = struct('id',{},'description',{},'modelsDir',{},'resultsDir',{},'modelFiles',{},'cvData',{},'pipelines',{},'metricNames',{});
+
+    % Helper to register a model directory
+    function addModelSet(setID, setDescription, modelDir, resultsDir)
+        files = dir(fullfile(modelDir, '*_Phase2_*_Model.mat'));
+        if isempty(files)
+            return;
+        end
+        files = select_latest_models(files);
+        cvInfo = load_cv_results(resultsDir);
+        modelSets(end+1) = struct( ...
+            'id', setID, ...
+            'description', setDescription, ...
+            'modelsDir', modelDir, ...
+            'resultsDir', resultsDir, ...
+            'modelFiles', files, ...
+            'cvData', cvInfo.cvData, ...
+            'pipelines', cvInfo.pipelines, ...
+            'metricNames', cvInfo.metricNames); %#ok<AGROW>
+    end
+
+    % Root directory (legacy single-run scenario)
+    addModelSet('Default','Models (root Phase2 directory)', modelsPathP2, resultsPathP2);
+
+    % Subdirectories for parallel comparisons
+    dirInfo = dir(modelsPathP2);
+    for i = 1:numel(dirInfo)
+        if dirInfo(i).isdir && ~ismember(dirInfo(i).name,{'.','..'})
+            subdir = fullfile(modelsPathP2, dirInfo(i).name);
+            addModelSet(dirInfo(i).name, sprintf('Models - %s', dirInfo(i).name), subdir, fullfile(resultsPathP2, dirInfo(i).name));
+        end
+    end
+
+    % Remove duplicates if both root and subdir have identical IDs with no files
+    modelSets = modelSets(~arrayfun(@(s) isempty(s.modelFiles), modelSets));
+end
+
+function files = select_latest_models(modelFiles)
+
+    fileMap = containers.Map();
+    for i = 1:numel(modelFiles)
+        tokens = regexp(modelFiles(i).name,'^\d+_Phase2_(.+)_Model\.mat$','tokens','once');
+        if isempty(tokens); continue; end
+        pipe = tokens{1};
+        if ~isKey(fileMap, pipe) || modelFiles(i).datenum > fileMap(pipe).datenum
+            fileMap(pipe) = modelFiles(i);
+        end
+    end
+    filesCell = values(fileMap);
+    files = [filesCell{:}];
+    [~,order] = sort({files.name});
+    files = files(order);
+end
+
+function cvInfo = load_cv_results(resultsDir)
+
+    cvInfo = struct('cvData',[],'pipelines',[],'metricNames',[]);
+    if ~isfolder(resultsDir)
+        return;
+    end
+    resFile = dir(fullfile(resultsDir,'*_Phase2_*_AllPipelineResults.mat'));
+    if isempty(resFile)
+        return;
+    end
+    [~,idx] = sort([resFile.datenum],'descend');
+    tmp = load(fullfile(resFile(idx(1)).folder,resFile(idx(1)).name));
+    if isfield(tmp,'resultsPerPipeline'); cvInfo.cvData = tmp.resultsPerPipeline; end
+    if isfield(tmp,'pipelines'); cvInfo.pipelines = tmp.pipelines; end
+    if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
+end
+
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath)
+
+    models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
+    X = variant.X;
+    y = variant.y;
+    probeIDs = variant.probeIDs;
+
+    pipeline_names_from_cv = {};
+    if ~isempty(modelSet.pipelines)
+        pipeline_names_from_cv = cellfun(@(p) p.name, modelSet.pipelines, 'UniformOutput', false);
+    end
+
+    for i=1:numel(modelSet.modelFiles)
+        mf = fullfile(modelSet.modelFiles(i).folder,modelSet.modelFiles(i).name);
+        S = load(mf,'finalModel','aggHyper','selectedIdx','selectedWn','ds'); %#ok<NASGU>
+        if ~isfield(S,'finalModel')
+            warning('Model file %s missing finalModel. Skipping.', mf);
+            continue;
+        end
+        finalModel = S.finalModel;
+        mdlName = finalModel.featureSelectionMethod;
+        if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
+
+        [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
+        posIdx = find(finalModel.LDAModel.ClassNames==3);
+        metrics = calculate_performance_metrics(y,ypred,score(:,posIdx),3,metricNamesEval);
+
+        entry = struct();
+        entry.name = mdlName;
+        entry.metrics = metrics;
+        entry.modelFile = mf;
+        entry.scores = score(:,posIdx);
+        entry.predicted = ypred;
+
+        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,score(:,posIdx),ypred,metricNamesEval);
+        entry.probeTable = probeTable;
+        entry.probeMetrics = probeMetrics;
+
+        % Attach CV metrics if available
+        if ~isempty(modelSet.cvData)
+            idx = find(strcmpi(pipeline_names_from_cv, entry.name),1);
+            if ~isempty(idx) && numel(modelSet.cvData) >= idx
+                entry.CV_Metrics = modelSet.cvData{idx}.outerFoldMetrics_mean;
+            end
+        end
+
+        % ROC curve file per variant/model set combination
+        [Xroc,Yroc,~,AUC] = perfcurve(y,score(:,posIdx),3);
+        rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s_%s.png', entry.name, modelSet.id, variant.id));
+        fig = figure('Visible','off');
+        plot(Xroc,Yroc,'LineWidth',1.5); grid on;
+        xlabel('False positive rate'); ylabel('True positive rate');
+        title(sprintf('ROC - %s (%s, %s) AUC %.3f',entry.name,modelSet.id,variant.id,AUC));
+        saveas(fig,rocFile); close(fig);
+        entry.rocFile = rocFile;
+
+        models(end+1) = entry; %#ok<AGROW>
+    end
+end
+
 function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison
