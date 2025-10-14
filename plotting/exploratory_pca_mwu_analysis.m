@@ -68,7 +68,33 @@ end
 
 % Filter to WHO-1 / WHO-3 rows only (in case WHO-2 slipped through).
 if ismember('WHO_Grade', analyzeTable.Properties.VariableNames)
-    analyzeTable = analyzeTable(ismember(string(analyzeTable.WHO_Grade), {"WHO-1","WHO-3"}), :);
+    whoGradesRaw = analyzeTable.WHO_Grade;
+    keepMask = true(height(analyzeTable), 1);
+    whoGradesText = {};
+
+    if iscategorical(whoGradesRaw)
+        whoGradesText = cellstr(whoGradesRaw);
+    elseif isstring(whoGradesRaw)
+        whoGradesText = cellstr(whoGradesRaw);
+    elseif iscellstr(whoGradesRaw)
+        whoGradesText = whoGradesRaw;
+    elseif isnumeric(whoGradesRaw)
+        warning(['WHO_Grade is numeric; expecting WHO-1/WHO-3 labels. ', ...
+                 'Skipping grade-based filtering.']);
+    else
+        error('Unsupported data type for WHO_Grade column: %s.', class(whoGradesRaw));
+    end
+
+    if ~isempty(whoGradesText)
+        keepMask = ismember(whoGradesText, {'WHO-1', 'WHO-3'});
+    end
+
+    analyzeTable = analyzeTable(keepMask, :);
+
+    if height(analyzeTable) == 0
+        error(['No WHO-1/WHO-3 entries remain after filtering. ', ...
+               'Check the WHO_Grade values in the selected dataset.']);
+    end
 end
 
 [X_flat, y_num] = flatten_spectra_for_pca(analyzeTable, length(wavenumbers_roi));
