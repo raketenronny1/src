@@ -35,8 +35,12 @@ resultsPathP2 = fullfile(cfg.projectRoot,'results','Phase2');
 if ~isfolder(resultsPath); mkdir(resultsPath); end
 if ~isfolder(figuresPath); mkdir(figuresPath); end
 
+logger = setup_logging(cfg, 'Phase3_FinalEvaluation');
+loggerCleanup = onCleanup(@()logger.closeFcn()); %#ok<NASGU>
+log_message('info', 'PHASE 3: Final Evaluation - %s', string(datetime('now')));
+
 %% 1. Load test data and build evaluation variants
-fprintf('Loading test set...\n');
+log_message('info', 'Loading test set...');
 dataPath = P.dataPath;
 testData = load_dataset_split(dataPath, 'test');
 wavenumbers = testData.wavenumbers;
@@ -58,7 +62,7 @@ bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{
 
 for v = 1:numel(testVariants)
     variant = testVariants(v);
-    fprintf('\nEvaluating test variant: %s\n', variant.description);
+    log_message('info', 'Evaluating test variant: %s', variant.description);
     variantResults = struct('modelSetID',{},'modelSetDescription',{},'models',{});
     bestScore = -Inf; bestEntry = struct();
 
@@ -95,7 +99,7 @@ end
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ParallelComparisonResults.mat',dateStr));
 save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets');
-fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
+log_message('info', 'Saved Phase 3 comparison results to %s', resultsFile);
 
 end
 
@@ -126,11 +130,11 @@ function testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg)
             filteredVariant.mask = keepMask;
             filteredVariant.outlierInfo = outlierStruct;
             testVariants(end+1) = filteredVariant; %#ok<AGROW>
-            fprintf('Joint T2/Q filtering removed %d/%d test spectra.\n', ...
+            log_message('info', 'Joint T2/Q filtering removed %d/%d test spectra.', ...
                 outlierStruct.numJointOutliers, numel(keepMask));
         end
     catch ME
-        warning('Failed to compute joint outliers on test set: %s', ME.message);
+        log_message('warning', 'Failed to compute joint outliers on test set: %s', ME.message);
     end
 end
 
@@ -223,7 +227,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         mf = fullfile(modelSet.modelFiles(i).folder,modelSet.modelFiles(i).name);
         S = load(mf,'finalModel','aggHyper','selectedIdx','selectedWn','ds'); %#ok<NASGU>
         if ~isfield(S,'finalModel')
-            warning('Model file %s missing finalModel. Skipping.', mf);
+            log_message('warning', 'Model file %s missing finalModel. Skipping.', mf);
             continue;
         end
         finalModel = S.finalModel;

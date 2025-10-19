@@ -5,7 +5,6 @@ function run_phase2_model_selection(cfg)
 % Supports parallel evaluation of data with and without joint T2/Q
 % outliers removed.
 
-fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
 
 helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
@@ -25,6 +24,10 @@ positiveClassLabel = runConfig.classLabels.positive;
 
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
+
+logger = setup_logging(cfg, 'Phase2_ModelSelection');
+loggerCleanup = onCleanup(@()logger.closeFcn()); %#ok<NASGU>
+log_message('info', 'PHASE 2: Model Selection - %s', string(datetime('now')));
 dataPath = P.dataPath;
 resultsPathRoot = P.resultsPath;
 modelsPathRoot = P.modelsPath;
@@ -42,7 +45,7 @@ probeIDs_all = trainData.probeIDs;
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);
 
 if cfg.parallelOutlierComparison
-    fprintf('Running parallel comparison for %d dataset variants.\n', numel(datasetVariants));
+    log_message('info', 'Running parallel comparison for %d dataset variants.', numel(datasetVariants));
     datasetsToProcess = datasetVariants;
 else
     % Select variant based on legacy flag for backwards compatibility
@@ -66,7 +69,7 @@ pipelines = define_pipelines();
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
     ds = datasetsToProcess(d);
-    fprintf('\n--- Dataset: %s ---\n', ds.description);
+    log_message('info', '--- Dataset: %s ---', ds.description);
 
     if cfg.parallelOutlierComparison
         resultsPath = fullfile(resultsPathRoot, ds.folderName);
@@ -92,7 +95,7 @@ for d = 1:numel(datasetsToProcess)
 
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
         'numOuterFolds','numInnerFolds','savedModels','ds');
-    fprintf('Results for %s saved to %s\n', ds.id, resultsFile);
+    log_message('info', 'Results for %s saved to %s', ds.id, resultsFile);
 end
 end
 
@@ -113,7 +116,7 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
         outlierStruct = identify_joint_t2q_outliers(X_all, cfg.outlierAlpha, cfg.outlierVarianceToModel);
         keepMask = outlierStruct.isJointInlier;
         if ~any(keepMask)
-            warning('All spectra flagged as joint outliers. Filtered dataset skipped.');
+            log_message('warning', 'All spectra flagged as joint outliers. Filtered dataset skipped.');
         else
             filteredStruct = baseStruct;
             filteredStruct.id = 'FilteredT2Q';
@@ -126,11 +129,11 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
             filteredStruct.mask = keepMask;
             filteredStruct.outlierInfo = outlierStruct;
             datasetVariants(end+1) = filteredStruct; %#ok<AGROW>
-            fprintf('Joint T2/Q filtering removed %d/%d spectra.\n', ...
+            log_message('info', 'Joint T2/Q filtering removed %d/%d spectra.', ...
                 outlierStruct.numJointOutliers, numel(keepMask));
         end
     catch ME
-        warning('Failed to compute joint T2/Q outliers: %s', ME.message);
+        log_message('warning', 'Failed to compute joint T2/Q outliers: %s', ME.message);
     end
 end
 
