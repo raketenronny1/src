@@ -53,6 +53,32 @@ cfg.verbose = true;             % set false to suppress progress output
 run('src/main.m')
 ```
 
+### Project configuration file
+
+Cross-cutting defaults such as class labels, metric lists and cross-validation
+fold counts are stored in `config/project_config.json`. The configuration loader
+(`load_run_configuration`) reads this file for every phase and merges it with
+internal defaults as well as any overrides supplied via the `cfg` struct.
+
+Key sections in the JSON file:
+
+- `classLabels.positive` / `classLabels.negative` – define which label should
+  be treated as the positive (e.g. WHO‑3) and negative class. These values are
+  passed into the metric calculations and probe-level summaries.
+- `metricPresets` – named collections of metric identifiers that can be reused
+  across phases. The supplied presets (`phase2_model_selection`,
+  `phase3_final_evaluation`, `probe_level_summary`) mirror the default
+  eight-metric bundle.
+- `phase2.outerFolds` / `phase2.innerFolds` – nested cross-validation fold
+  counts used during model selection.
+- `phase2.metricsPreset`, `phase3.metricsPreset`,
+  `phase3.probeMetricsPreset` – select which metric preset each phase should
+  track when reporting performance.
+
+You can override these defaults either by editing the JSON file or by passing
+fields such as `cfg.phase2OuterFolds`, `cfg.phase3MetricsPreset`, or
+`cfg.positiveClassLabel` when calling the phase scripts.
+
 ## Analysis pipeline
 
 All scripts assume the MATLAB current folder is set to the project root. Each phase can be run independently once the required input files are available.
@@ -189,9 +215,18 @@ Reusable helper functions in `helper_functions/` include:
 [specB, wnB] = bin_spectra(rawSpec, wn, 5);           % Spectral binning
 FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
 M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
-[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
-pr = ProgressReporter('Demo loop', 10); pr.update();
+[bestParams, perf, diag] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
+
+## Testing
+
+Run the MATLAB test suite from the repository root to execute the helper function unit tests:
+
+```matlab
+runtests('tests')
+```
+
+The command automatically discovers the test class in `tests/` and exercises the spectral binning and Fisher ratio utilities. The GitHub Actions workflow (`.github/workflows/matlab-tests.yml`) runs the same command on every push and pull request.
 

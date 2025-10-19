@@ -24,7 +24,9 @@ function cfg = configure_cfg(varargin)
     end
 
     if mod(numel(args),2) ~= 0
-        error('Name-value arguments must occur in pairs.');
+        error('configure_cfg:NameValuePairs', ...
+              ['Name-value arguments must occur in pairs. Troubleshooting tip: check configure_cfg ', ...
+               'calls for a missing value or trailing parameter.']);
     end
     for i = 1:2:numel(args)
         name = args{i};
@@ -51,8 +53,7 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'outlierVarianceToModel')
         cfg.outlierVarianceToModel = 0.95;
     end
-    if ~isfield(cfg,'verbose')
-        cfg.verbose = true;
-    end
+
+    cfg = validate_configuration(cfg);
 end
 
