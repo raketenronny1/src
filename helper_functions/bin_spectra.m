@@ -15,15 +15,37 @@
 %   spectra_binned    - (N_spectra x N_features_binned) matrix of binned spectra.
 %   wavenumbers_binned- (1 x N_features_binned) vector of new mean wavenumbers for bins.
 %
+% Optional name-value arguments:
+%   'ChunkSize'     - Maximum number of spectra rows processed per loop
+%                     iteration. Use to limit memory usage when spectra is
+%                     very large (default [] -> process all rows at once).
+%
 % Date: 2025-05-15
 
 
-function [spectra_binned, wavenumbers_binned] = bin_spectra(spectra, wavenumbers, binningFactor)
+function [spectra_binned, wavenumbers_binned] = bin_spectra(spectra, wavenumbers, binningFactor, varargin)
 
     if binningFactor <= 1 || isempty(spectra) || isempty(wavenumbers)
         spectra_binned = spectra;
         wavenumbers_binned = wavenumbers;
         return;
+    end
+
+    chunkSize = [];
+    if ~isempty(varargin)
+        if mod(numel(varargin),2) ~= 0
+            error('bin_spectra:InvalidNameValue', 'Name-value arguments must occur in pairs.');
+        end
+        for nvIdx = 1:2:numel(varargin)
+            name = lower(string(varargin{nvIdx}));
+            value = varargin{nvIdx+1};
+            switch name
+                case "chunksize"
+                    chunkSize = value;
+                otherwise
+                    error('bin_spectra:UnknownOption', 'Unknown option "%s".', name);
+            end
+        end
     end
 
     [numSpectra, numOriginalFeatures] = size(spectra);
@@ -53,15 +75,29 @@ function [spectra_binned, wavenumbers_binned] = bin_spectra(spectra, wavenumbers
     spectra_binned = zeros(numSpectra, numBinnedFeatures);
     wavenumbers_binned = zeros(1, numBinnedFeatures);
 
+    binStartIdx = (0:numBinnedFeatures-1) * binningFactor + 1;
+    binEndIdx = binStartIdx + binningFactor - 1;
     for i = 1:numBinnedFeatures
-        startIdx = (i-1) * binningFactor + 1;
-        endIdx = i * binningFactor;
-        
-        % This loop structure ensures endIdx will not exceed numOriginalFeatures
-        % because numBinnedFeatures is calculated using floor().
-        % The last few features (less than binningFactor) will be ignored.
-        
-        spectra_binned(:, i) = mean(spectra(:, startIdx:endIdx), 2);
-        wavenumbers_binned(i) = mean(wavenumbers(startIdx:endIdx));
+        wavenumbers_binned(i) = mean(wavenumbers(binStartIdx(i):binEndIdx(i)));
+    end
+
+    if isempty(chunkSize) || ~isfinite(chunkSize) || chunkSize <= 0
+        chunkSize = numSpectra;
+    else
+        chunkSize = min(numSpectra, max(1, floor(chunkSize)));
+    end
+
+    if numSpectra == 0 || chunkSize == 0
+        return;
+    end
+
+    for rowStart = 1:chunkSize:numSpectra
+        rowEnd = min(rowStart + chunkSize - 1, numSpectra);
+        chunk = spectra(rowStart:rowEnd, :);
+        chunkBinned = zeros(size(chunk,1), numBinnedFeatures);
+        for i = 1:numBinnedFeatures
+            chunkBinned(:, i) = mean(chunk(:, binStartIdx(i):binEndIdx(i)), 2);
+        end
+        spectra_binned(rowStart:rowEnd, :) = chunkBinned;
     end
 end

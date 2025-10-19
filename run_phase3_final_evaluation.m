@@ -32,7 +32,7 @@ wavenumbers = wavenumbers_roi;
 T = load(fullfile(dataPath,'data_table_test.mat'),'dataTableTest');
 dataTableTest = T.dataTableTest;
 [X_test, y_test, ~, probeIDs_test] = flatten_spectra_for_pca( ...
-    dataTableTest, length(wavenumbers));
+    dataTableTest, length(wavenumbers), 'ChunkSize', get_cfg_chunk_size(cfg, 'flattenSpectra'));
 
 testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg);
 

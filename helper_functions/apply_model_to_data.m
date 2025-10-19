@@ -7,6 +7,7 @@ function [yPred,scores] = apply_model_to_data(model,X,wn)
 % Inputs:
 %   model - struct containing fields:
 %       binningFactor           - scalar binning factor (optional)
+%       binningChunkSize        - optional chunk size to reuse during binning
 %       featureSelectionMethod  - 'pca' or other supported method
 %       selectedFeatureIndices  - indices for non-PCA feature selection
 %       PCACoeff, PCAMu         - PCA transformation matrices (when using PCA)
@@ -22,8 +23,13 @@ function [yPred,scores] = apply_model_to_data(model,X,wn)
 % scripts for applying trained models to new data.
 
     Xp = X;
+    binChunkSize = [];
+    if isfield(model,'binningChunkSize')
+        binChunkSize = model.binningChunkSize;
+    end
+
     if isfield(model,'binningFactor') && model.binningFactor>1
-        Xp = bin_spectra(X,wn,model.binningFactor);
+        Xp = bin_spectra(X,wn,model.binningFactor,'ChunkSize',binChunkSize);
     end
     featureMethod = 'none';
     if isfield(model,'featureSelectionMethod') && ~isempty(model.featureSelectionMethod)

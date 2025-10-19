@@ -27,7 +27,7 @@ load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
 if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
 
 [X_all, y_all, ~, probeIDs_all] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+    dataTableTrain, length(wavenumbers_roi), 'ChunkSize', get_cfg_chunk_size(cfg, 'flattenSpectra'));
 
 %% Build dataset variants
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);
@@ -74,7 +74,7 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath);
+        numInnerFolds, resultsPath, modelsPath, cfg);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -151,7 +151,11 @@ function pipelines = define_pipelines()
     pidx=pidx+1; pipelines{pidx}=p;
 end
 
-function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
+function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath, cfg)
+
+    chunkOptions = struct( ...
+        'binSpectraRows', get_cfg_chunk_size(cfg, 'binSpectraRows'), ...
+        'fisherPerClass', get_cfg_chunk_size(cfg, 'fisherPerClass'));
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -176,9 +180,9 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames,chunkOptions);
             outerBestHyper{k}=bestHyper;
-            [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
+            [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper,chunkOptions);
             [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
             posIdx=find(finalModel.LDAModel.ClassNames==3);
             m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
@@ -191,7 +195,7 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
         res.outerFoldBestHyperparams=outerBestHyper;
 
         aggHyper=aggregate_best_hyperparams(outerBestHyper);
-        [finalModel,selectedIdx,selectedWn]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
+        [finalModel,selectedIdx,selectedWn]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper,chunkOptions);
         modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
         save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds');
         res.finalModelFile=modelFile;
@@ -200,3 +204,4 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
         savedModels{iPipe}=modelFile;
     end
 end
+

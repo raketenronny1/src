@@ -8,6 +8,15 @@ function cfg = configure_cfg(varargin)
 %   Recognised fields:
 %     projectRoot        - repository root path
 %     useOutlierRemoval  - true to load pre-filtered training data
+%     chunkSizes         - struct controlling chunk-aware helpers:
+%         .flattenSpectra  - number of probes to process per batch when
+%                            flattening spectra (default [] -> all at once).
+%         .binSpectraRows  - number of spectra rows per binning pass.
+%         .fisherPerClass  - rows per class batch when computing Fisher ratios.
+%
+%   Smaller chunk sizes reduce peak memory consumption at the cost of extra
+%   loop overhead. Leaving the value empty ([]) processes the entire dataset
+%   in one pass, matching legacy behaviour.
 %
 %   Example:
 %       cfg = configure_cfg('projectRoot','/path/to/project', ...
@@ -50,6 +59,18 @@ function cfg = configure_cfg(varargin)
     end
     if ~isfield(cfg,'outlierVarianceToModel')
         cfg.outlierVarianceToModel = 0.95;
+    end
+    if ~isfield(cfg,'chunkSizes') || ~isstruct(cfg.chunkSizes)
+        cfg.chunkSizes = struct();
+    end
+    if ~isfield(cfg.chunkSizes,'flattenSpectra')
+        cfg.chunkSizes.flattenSpectra = [];
+    end
+    if ~isfield(cfg.chunkSizes,'binSpectraRows')
+        cfg.chunkSizes.binSpectraRows = [];
+    end
+    if ~isfield(cfg.chunkSizes,'fisherPerClass')
+        cfg.chunkSizes.fisherPerClass = [];
     end
 end
 

@@ -1,11 +1,34 @@
 % perform_inner_cv.m
 %
 % Helper function to perform inner cross-validation for hyperparameter tuning.
+% Optional chunkOptions argument controls batched preprocessing:
+%   chunkOptions.binSpectraRows - rows processed per binning pass
+%   chunkOptions.fisherPerClass - rows processed per class when ranking features
 % Date: 2025-05-15 (Updated with fscmrmr fix; Corrected to enforce fisherFeaturePercent)
 
 function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
-    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
+    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames, varargin)
+
+    if isempty(varargin)
+        chunkOptions = struct();
+    else
+        chunkOptions = varargin{1};
+        if isempty(chunkOptions)
+            chunkOptions = struct();
+        end
+    end
+    if ~isstruct(chunkOptions)
+        error('perform_inner_cv:InvalidChunkOptions', 'chunkOptions must be a struct when provided.');
+    end
+    binChunkSize = [];
+    fisherChunkSize = [];
+    if isfield(chunkOptions,'binSpectraRows')
+        binChunkSize = chunkOptions.binSpectraRows;
+    end
+    if isfield(chunkOptions,'fisherPerClass')
+        fisherChunkSize = chunkOptions.fisherPerClass;
+    end
 
     paramGridCells = {}; 
     paramNames = {};     
@@ -159,8 +182,8 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             X_train_p = X_train_fold; X_val_p = X_val_fold; 
 
             if currentHyperparams.binningFactor > 1
-                [X_train_p, current_w_fold] = bin_spectra(X_train_fold, wavenumbers_original, currentHyperparams.binningFactor);
-                [X_val_p, ~] = bin_spectra(X_val_fold, wavenumbers_original, currentHyperparams.binningFactor);
+                [X_train_p, current_w_fold] = bin_spectra(X_train_fold, wavenumbers_original, currentHyperparams.binningFactor, 'ChunkSize', binChunkSize);
+                [X_val_p, ~] = bin_spectra(X_val_fold, wavenumbers_original, currentHyperparams.binningFactor, 'ChunkSize', binChunkSize);
             end
 
             selectedFcIdx_in_current_w = 1:size(X_train_p, 2); 
@@ -181,7 +204,7 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                     % --- FIX ENDS HERE ---
 
                     if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2
-                        fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold);
+                        fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold, 'ChunkSize', fisherChunkSize);
                         [~, sorted_idx_inner] = sort(fisherRatios_inner, 'descend', 'MissingPlacement','last');
                         selectedFcIdx_in_current_w = sorted_idx_inner(1:numFeat);
                     end

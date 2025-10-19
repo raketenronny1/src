@@ -23,11 +23,33 @@
 %   originalSpectrumIndexInProbe_flat- Index of the spectrum within its
 %                                      original probe.
 %
+% Optional name-value arguments:
+%   'ChunkSize' - Number of table rows to process per batch. Smaller
+%                 batches lower peak memory requirements at the cost of
+%                 additional loop overhead (default [] -> all rows).
+%
 % Date: 2025-05-18
 
 function [X_flat, y_numeric_flat, y_cat_flat, patientID_flat, ...
           originalProbeRowIdx_flat, originalSpectrumIndexInProbe_flat] = ...
-          flatten_spectra_for_pca(dataTable, numWavenumberPoints)
+          flatten_spectra_for_pca(dataTable, numWavenumberPoints, varargin)
+
+    chunkSize = [];
+    if ~isempty(varargin)
+        if mod(numel(varargin),2) ~= 0
+            error('flatten_spectra_for_pca:InvalidNameValue', 'Name-value arguments must occur in pairs.');
+        end
+        for nvIdx = 1:2:numel(varargin)
+            name = lower(string(varargin{nvIdx}));
+            value = varargin{nvIdx+1};
+            switch name
+                case "chunksize"
+                    chunkSize = value;
+                otherwise
+                    error('flatten_spectra_for_pca:UnknownOption', 'Unknown option "%s".', name);
+            end
+        end
+    end
 
     X_flat = [];
     y_cat_flat = categorical();
@@ -41,38 +63,67 @@ function [X_flat, y_numeric_flat, y_cat_flat, patientID_flat, ...
         return;
     end
 
-    allSpectra_cell = {};
-    allLabels_cell = {};
-    patient_cell = {};
-    probeRows = [];
-    spectrumIdxInProbe = [];
-
-    for i = 1:height(dataTable)
-        spectraMatrix = dataTable.CombinedSpectra{i};
-        if isempty(spectraMatrix) || ~isnumeric(spectraMatrix) || ndims(spectraMatrix) ~= 2
-            continue;
-        end
-        if size(spectraMatrix,2) ~= numWavenumberPoints
-            warning('flatten_spectra_for_pca: row %d wavenumber mismatch. Skipping.', i);
-            continue;
-        end
-        numSpectra = size(spectraMatrix,1);
-        allSpectra_cell{end+1,1} = spectraMatrix; %#ok<*AGROW>
-        allLabels_cell{end+1,1} = repmat(dataTable.WHO_Grade(i), numSpectra,1);
-        patient_cell{end+1,1} = repmat(dataTable.Diss_ID(i), numSpectra,1);
-        probeRows = [probeRows; repmat(i, numSpectra,1)];
-        spectrumIdxInProbe = [spectrumIdxInProbe; (1:numSpectra)'];
+    dataHeight = height(dataTable);
+    if isempty(chunkSize) || ~isfinite(chunkSize) || chunkSize <= 0
+        chunkSize = dataHeight;
+    else
+        chunkSize = min(dataHeight, max(1, floor(chunkSize)));
     end
 
-    if isempty(allSpectra_cell)
+    spectraBlocks = {};
+    labelBlocks = {};
+    patientBlocks = {};
+    probeRowBlocks = {};
+    spectrumIndexBlocks = {};
+
+    for rowStart = 1:chunkSize:dataHeight
+        rowEnd = min(rowStart + chunkSize - 1, dataHeight);
+        chunkSpectraCell = {};
+        chunkLabelCell = {};
+        chunkPatientCell = {};
+        chunkProbeRows = [];
+        chunkSpectrumIdx = [];
+
+        for i = rowStart:rowEnd
+            spectraMatrix = dataTable.CombinedSpectra{i};
+            if isempty(spectraMatrix) || ~isnumeric(spectraMatrix) || ndims(spectraMatrix) ~= 2
+                continue;
+            end
+            if size(spectraMatrix,2) ~= numWavenumberPoints
+                warning('flatten_spectra_for_pca: row %d wavenumber mismatch. Skipping.', i);
+                continue;
+            end
+            numSpectra = size(spectraMatrix,1);
+            chunkSpectraCell{end+1,1} = spectraMatrix; %#ok<AGROW>
+            labelsStr = repmat(string(dataTable.WHO_Grade(i)), numSpectra,1);
+            chunkLabelCell{end+1,1} = labelsStr;
+            chunkPatientCell{end+1,1} = repmat(string(dataTable.Diss_ID(i)), numSpectra,1);
+            chunkProbeRows = [chunkProbeRows; repmat(i, numSpectra,1)]; %#ok<AGROW>
+            chunkSpectrumIdx = [chunkSpectrumIdx; (1:numSpectra)']; %#ok<AGROW>
+        end
+
+        if isempty(chunkSpectraCell)
+            continue;
+        end
+
+        spectraBlocks{end+1,1} = vertcat(chunkSpectraCell{:}); %#ok<AGROW>
+        labelBlocks{end+1,1} = vertcat(chunkLabelCell{:}); %#ok<AGROW>
+        patientBlocks{end+1,1} = vertcat(chunkPatientCell{:}); %#ok<AGROW>
+        probeRowBlocks{end+1,1} = chunkProbeRows; %#ok<AGROW>
+        spectrumIndexBlocks{end+1,1} = chunkSpectrumIdx; %#ok<AGROW>
+    end
+
+    if isempty(spectraBlocks)
         error('flatten_spectra_for_pca: No valid spectra extracted.');
     end
 
-    X_flat = cell2mat(allSpectra_cell);
-    y_cat_flat = cat(1, allLabels_cell{:});
-    patientID_flat = vertcat(patient_cell{:});
-    originalProbeRowIdx_flat = probeRows;
-    originalSpectrumIndexInProbe_flat = spectrumIdxInProbe;
+    X_flat = vertcat(spectraBlocks{:});
+    labelStrings = vertcat(labelBlocks{:});
+    patientID_flat = vertcat(patientBlocks{:});
+    originalProbeRowIdx_flat = vertcat(probeRowBlocks{:});
+    originalSpectrumIndexInProbe_flat = vertcat(spectrumIndexBlocks{:});
+
+    y_cat_flat = categorical(labelStrings);
 
     % numeric labels
     y_numeric_flat = zeros(length(y_cat_flat),1);

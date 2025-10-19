@@ -1,4 +1,4 @@
-function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wavenumbers, pipelineConfig, hyperparams)
+function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wavenumbers, pipelineConfig, hyperparams, varargin)
 %TRAIN_FINAL_PIPELINE_MODEL Train a final model for a given pipeline.
 %   [MODEL, IDX, WN] = TRAIN_FINAL_PIPELINE_MODEL(X, Y, WN, PIPE, HYPER)
 %   bins the spectra if required, performs feature selection according to the
@@ -18,11 +18,36 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
 %       selectedIdx- indices of selected features after preprocessing
 %       selectedWn - wavenumbers corresponding to selectedIdx
 %
+%   Optional inputs
+%       chunkOptions.binSpectraRows - rows per chunk during binning
+%       chunkOptions.fisherPerClass - rows per chunk per class for Fisher ratios
+%
 %   Date: 2025-06-16
 %
 %   This helper consolidates duplicated logic that was previously embedded
 %   in the Phase 2 script. It mirrors the preprocessing steps used during
 %   cross‑validation so the final model can be applied consistently later on.
+
+    if isempty(varargin)
+        chunkOptions = struct();
+    else
+        chunkOptions = varargin{1};
+        if isempty(chunkOptions)
+            chunkOptions = struct();
+        end
+    end
+    if ~isstruct(chunkOptions)
+        error('train_final_pipeline_model:InvalidChunkOptions', 'chunkOptions must be a struct when provided.');
+    end
+
+    binChunkSize = [];
+    fisherChunkSize = [];
+    if isfield(chunkOptions,'binSpectraRows')
+        binChunkSize = chunkOptions.binSpectraRows;
+    end
+    if isfield(chunkOptions,'fisherPerClass')
+        fisherChunkSize = chunkOptions.fisherPerClass;
+    end
 
     % Default outputs
     model = struct();
@@ -39,9 +64,10 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
     % --- Binning ---
     model.binningFactor = 1;
     if isfield(hyperparams, 'binningFactor') && hyperparams.binningFactor > 1
-        [Xp, currentWn] = bin_spectra(X, wavenumbers, hyperparams.binningFactor);
+        [Xp, currentWn] = bin_spectra(X, wavenumbers, hyperparams.binningFactor, 'ChunkSize', binChunkSize);
         model.binningFactor = hyperparams.binningFactor;
     end
+    model.binningChunkSize = binChunkSize;
 
     % --- Feature selection ---
     model.featureSelectionMethod = pipelineConfig.feature_selection_method;
@@ -54,7 +80,7 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
             end
             numFeat = min(numFeat, size(Xp,2));
             if numFeat > 0 && size(Xp,1) > 1 && length(unique(y)) == 2
-                fr = calculate_fisher_ratio(Xp, y);
+                fr = calculate_fisher_ratio(Xp, y, 'ChunkSize', fisherChunkSize);
                 [~, sortIdx] = sort(fr, 'descend', 'MissingPlacement','last');
                 selectedIdx = sortIdx(1:numFeat);
             else
@@ -125,6 +151,7 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
             selectedWn = currentWn(selectedIdx);
             model.selectedFeatureIndices = selectedIdx;
     end
+    model.selectedWavenumbers = selectedWn;
 
     % --- Train classifier ---
     switch lower(pipelineConfig.classifier)

@@ -176,10 +176,11 @@ Files in `results/`, `models/`, and `figures/` can accumulate across runs. Perio
 Reusable helper functions in `helper_functions/` include:
 
 ```matlab
-[specB, wnB] = bin_spectra(rawSpec, wn, 5);           % Spectral binning
-FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
+[specB, wnB] = bin_spectra(rawSpec, wn, 5, 'ChunkSize', 1024); % Spectral binning in batches
+FR = calculate_fisher_ratio(specB, labels, 'ChunkSize', 2048); % Feature ranking
 M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
-[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
+chunkOpts = struct('binSpectraRows', 1024, 'fisherPerClass', 2048);
+[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'}, chunkOpts);
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
