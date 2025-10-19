@@ -6,10 +6,16 @@ function run_phase3_final_evaluation(cfg)
 % executed with `parallelOutlierComparison`, the script evaluates the
 % resulting model sets separately and reports results for test data with
 % and without joint Hotelling T2 / Q-statistic outliers.
+% Accepts either a configuration struct or a YAML file path.
 
 %% 0. Configuration
-if nargin < 1
-    cfg = struct();
+if nargin < 1 || isempty(cfg)
+    cfg = configure_cfg();
+elseif ischar(cfg) || (isstring(cfg) && isscalar(cfg))
+    cfg = configure_cfg('configFile', char(cfg));
+elseif ~isstruct(cfg)
+    error('run_phase3_final_evaluation:InvalidConfig', ...
+        'Configuration input must be empty, a struct or a file path.');
 end
 
 helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
@@ -27,7 +33,7 @@ probeMetricNames = phase3Config.probeMetrics;
 positiveClassLabel = runConfig.classLabels.positive;
 negativeClassLabel = runConfig.classLabels.negative;
 
-P = setup_project_paths(cfg.projectRoot,'Phase3');
+P = setup_project_paths(cfg.projectRoot,'Phase3',cfg);
 resultsPath = P.resultsPath;
 figuresPath = P.figuresPath;
 modelsPathP2 = fullfile(cfg.projectRoot,'models','Phase2');

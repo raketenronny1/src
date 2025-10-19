@@ -18,7 +18,7 @@ function visualize_model_comparison_spiderplots(cfg, opts, results)
         opts = plot_settings();
     end
 
-    P = setup_project_paths(cfg.projectRoot);
+    P = setup_project_paths(cfg.projectRoot, '', cfg);
 
     if nargin < 3 || isempty(results)
         resDir = fullfile(P.resultsPath, 'Phase3');

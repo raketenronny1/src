@@ -4,6 +4,7 @@ function run_phase2_model_selection(cfg)
 % Model and feature selection with optional outlier removal.
 % Supports parallel evaluation of data with and without joint T2/Q
 % outliers removed.
+% Accepts either a configuration struct or a YAML file path.
 
 if nargin < 1, cfg = struct(); end
 

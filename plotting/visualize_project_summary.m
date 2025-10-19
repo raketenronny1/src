@@ -16,7 +16,7 @@ function visualize_project_summary(cfg, opts)
 
     fprintf('GENERATING PROJECT VISUALIZATIONS (Phases 2-4) - %s\n', string(datetime('now')));
 
-    P = setup_project_paths(cfg.projectRoot);
+    P = setup_project_paths(cfg.projectRoot, '', cfg);
     figuresPath_output = fullfile(P.figuresPath, 'ProjectSummaryFigures');
     if ~isfolder(figuresPath_output), mkdir(figuresPath_output); end
     dateStrForFilenames = opts.datePrefix;
