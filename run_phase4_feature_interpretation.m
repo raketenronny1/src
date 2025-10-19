@@ -136,7 +136,8 @@ wavenumbers_original = wData.wavenumbers_roi;
 if iscolumn(wavenumbers_original); wavenumbers_original = wavenumbers_original'; end
 
 if binningFactorForPlot > 1
-    [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
+    binChunkSize = get_cfg_chunk_size(cfg, 'binSpectraRows');
+    [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot, 'ChunkSize', binChunkSize);
 else
     X_train_binned_for_plot = X_train_full_for_plot;
     wavenumbers_binned_for_plot = wavenumbers_original;

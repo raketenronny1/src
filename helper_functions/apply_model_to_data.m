@@ -28,8 +28,13 @@ function [yPred,scores,classNames] = apply_model_to_data(model,X,wn)
     end
 
     Xp = X;
+    binChunkSize = [];
+    if isfield(model,'binningChunkSize')
+        binChunkSize = model.binningChunkSize;
+    end
+
     if isfield(model,'binningFactor') && model.binningFactor>1
-        Xp = bin_spectra(X,wn,model.binningFactor);
+        Xp = bin_spectra(X,wn,model.binningFactor,'ChunkSize',binChunkSize);
     end
     featureMethod = 'none';
     if isfield(model,'featureSelectionMethod') && ~isempty(model.featureSelectionMethod)

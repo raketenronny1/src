@@ -14,9 +14,31 @@
 % OUTPUTS:
 %   fisherRatios - (1 x N_features) vector of Fisher ratios.
 %
+% Optional name-value arguments:
+%   'ChunkSize' - Number of spectra rows per class to accumulate per
+%                 iteration. Use smaller values to reduce peak memory
+%                 usage when X is very large (default [] -> all rows).
+%
 % Date: 2025-05-15
 
-function fisherRatios = calculate_fisher_ratio(X, y)
+function fisherRatios = calculate_fisher_ratio(X, y, varargin)
+
+    chunkSize = [];
+    if ~isempty(varargin)
+        if mod(numel(varargin),2) ~= 0
+            error('calculate_fisher_ratio:InvalidNameValue', 'Name-value arguments must occur in pairs.');
+        end
+        for nvIdx = 1:2:numel(varargin)
+            name = lower(string(varargin{nvIdx}));
+            value = varargin{nvIdx+1};
+            switch name
+                case "chunksize"
+                    chunkSize = value;
+                otherwise
+                    error('calculate_fisher_ratio:UnknownOption', 'Unknown option "%s".', name);
+            end
+        end
+    end
 
     classes = unique(y);
     if length(classes) ~= 2
@@ -35,22 +57,66 @@ function fisherRatios = calculate_fisher_ratio(X, y)
         % Proceeding, but user should be aware if sample size per class is tiny.
     end
     
-    X1 = X(class1_indices, :);
-    X2 = X(class2_indices, :);
+    [numSamples, numFeatures] = size(X);
+    if isempty(chunkSize) || ~isfinite(chunkSize) || chunkSize <= 0
+        chunkSize = numSamples;
+    else
+        chunkSize = min(numSamples, max(1, floor(chunkSize)));
+    end
 
-    if isempty(X1) || isempty(X2) % Should be caught by <2 check generally
-        warning('calculate_fisher_ratio: One or both classes have no samples after indexing. Fisher ratios will be NaN.');
-        fisherRatios = NaN(1, size(X,2));
+    if numSamples == 0 || chunkSize == 0
+        warning('calculate_fisher_ratio: Empty data matrix provided. Returning NaNs.');
+        fisherRatios = NaN(1, numFeatures);
         return;
     end
 
-    mean1 = mean(X1, 1);
-    mean2 = mean(X2, 1);
-    
-    % var(X,0,1) calculates variance using (N-1) denominator.
-    % If a class has only 1 sample, var will be NaN.
-    var1  = var(X1, 0, 1); 
-    var2  = var(X2, 0, 1);
+    sum1 = zeros(1, numFeatures);
+    sum2 = zeros(1, numFeatures);
+    sumsq1 = zeros(1, numFeatures);
+    sumsq2 = zeros(1, numFeatures);
+    count1 = 0;
+    count2 = 0;
+
+    for rowStart = 1:chunkSize:numSamples
+        rowEnd = min(rowStart + chunkSize - 1, numSamples);
+        chunkX = X(rowStart:rowEnd, :);
+        chunkMask1 = class1_indices(rowStart:rowEnd);
+        chunkMask2 = class2_indices(rowStart:rowEnd);
+
+        if any(chunkMask1)
+            X1_chunk = chunkX(chunkMask1, :);
+            sum1 = sum1 + sum(X1_chunk, 1);
+            sumsq1 = sumsq1 + sum(X1_chunk.^2, 1);
+            count1 = count1 + size(X1_chunk,1);
+        end
+        if any(chunkMask2)
+            X2_chunk = chunkX(chunkMask2, :);
+            sum2 = sum2 + sum(X2_chunk, 1);
+            sumsq2 = sumsq2 + sum(X2_chunk.^2, 1);
+            count2 = count2 + size(X2_chunk,1);
+        end
+    end
+
+    if count1 == 0 || count2 == 0
+        warning('calculate_fisher_ratio: One or both classes have no samples after indexing. Fisher ratios will be NaN.');
+        fisherRatios = NaN(1, numFeatures);
+        return;
+    end
+
+    mean1 = sum1 / max(count1, 1);
+    mean2 = sum2 / max(count2, 1);
+
+    var1 = NaN(1, numFeatures);
+    var2 = NaN(1, numFeatures);
+    if count1 > 1
+        var1 = (sumsq1 - (sum1.^2) / count1) / (count1 - 1);
+    end
+    if count2 > 1
+        var2 = (sumsq2 - (sum2.^2) / count2) / (count2 - 1);
+    end
+
+    var1(var1 < 0) = 0; % numerical guard
+    var2(var2 < 0) = 0;
 
     % If variance is NaN (e.g., only 1 sample in class), or 0 (all samples in class are identical for that feature)
     % replace NaN with 0 for denominator stability, assuming if var is NaN due to 1 sample, it's like 0 spread for that point.

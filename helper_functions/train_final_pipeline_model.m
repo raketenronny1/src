@@ -18,6 +18,10 @@ function [model, selectedIdx, selectedWn, diagnostics] = train_final_pipeline_mo
 %       selectedIdx- indices of selected features after preprocessing
 %       selectedWn - wavenumbers corresponding to selectedIdx
 %
+%   Optional inputs
+%       chunkOptions.binSpectraRows - rows per chunk during binning
+%       chunkOptions.fisherPerClass - rows per chunk per class for Fisher ratios
+%
 %   Date: 2025-06-16
 %
 %   This helper consolidates duplicated logic that was previously embedded
@@ -132,6 +136,7 @@ function [model, selectedIdx, selectedWn, diagnostics] = train_final_pipeline_mo
             selectedWn = currentWn(selectedIdx);
             model.selectedFeatureIndices = selectedIdx;
     end
+    model.selectedWavenumbers = selectedWn;
 
     % --- Train classifier ---
     switch lower(pipelineConfig.classifier)
