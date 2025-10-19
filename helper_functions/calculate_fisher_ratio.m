@@ -14,6 +14,15 @@
 % OUTPUTS:
 %   fisherRatios - (1 x N_features) vector of Fisher ratios.
 %
+% EXAMPLE:
+%   % Create two separable classes with simple numeric features.
+%   X = [1 2 3; 2 3 4; 6 7 8; 7 8 9];
+%   y = [zeros(2,1); ones(2,1)];
+%
+%   fisherRatios = calculate_fisher_ratio(X, y);
+%   % High Fisher ratios in this synthetic setup indicate the later features
+%   % have stronger separation between the two classes.
+%
 % Date: 2025-05-15
 
 function fisherRatios = calculate_fisher_ratio(X, y)
