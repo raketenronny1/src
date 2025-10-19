@@ -20,6 +20,13 @@ end
 cfg = configure_cfg(cfg);
 cfg = validate_configuration(cfg);
 
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase3Config = runConfig.phase3;
+metricNamesEval = phase3Config.metrics;
+probeMetricNames = phase3Config.probeMetrics;
+positiveClassLabel = runConfig.classLabels.positive;
+negativeClassLabel = runConfig.classLabels.negative;
+
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
 figuresPath = P.figuresPath;
@@ -46,7 +53,6 @@ if isempty(modelSets)
 end
 
 %% 3. Evaluate models across variants
-metricNamesEval = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1','PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
 resultsByVariant = struct('id',{},'description',{},'modelSets',{});
 bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{},'modelFile',{});
 
@@ -59,7 +65,7 @@ for v = 1:numel(testVariants)
     for s = 1:numel(modelSets)
         modelSet = modelSets(s);
         fprintf('  Model set: %s\n', modelSet.description);
-        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath);
+        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames);
         variantResults(end+1).modelSetID = modelSet.id; %#ok<AGROW>
         variantResults(end).modelSetDescription = modelSet.description;
         variantResults(end).models = models;
@@ -201,7 +207,7 @@ function cvInfo = load_cv_results(resultsDir)
     if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
 end
 
-function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath)
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames)
 
     models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
     X = variant.X;
@@ -270,7 +276,10 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
     end
 end
 
-function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
+function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames,positiveClassLabel,negativeClassLabel,probeMetricNames)
+    if nargin < 8 || isempty(probeMetricNames)
+        probeMetricNames = metricNames;
+    end
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison
     probes = unique(probeIDs,'stable');

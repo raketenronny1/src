@@ -5,7 +5,7 @@
 
 function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
-    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
+    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames, positiveClassLabel)
 
     paramGridCells = {};
     paramNames = {};
@@ -113,10 +113,10 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
     [~, ~, groupIdxPerSpectrum_inner] = unique(probeIDs_inner_train_full, 'stable'); 
     for i = 1:length(uniqueProbesInner)
         probeSpectraLabels_inner = y_inner_train_full(groupIdxPerSpectrum_inner == i);
-        if any(probeSpectraLabels_inner == 3) 
-            probe_WHO_Grade_inner(i) = 3;
+        if any(probeSpectraLabels_inner == positiveClassLabel)
+            probe_WHO_Grade_inner(i) = positiveClassLabel;
         else
-            probe_WHO_Grade_inner(i) = mode(probeSpectraLabels_inner); 
+            probe_WHO_Grade_inner(i) = mode(probeSpectraLabels_inner);
         end
     end
     try

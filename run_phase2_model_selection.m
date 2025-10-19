@@ -16,6 +16,13 @@ end
 cfg = configure_cfg(cfg);
 cfg = validate_configuration(cfg);
 
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase2Config = runConfig.phase2;
+metricNames = phase2Config.metrics;
+numOuterFolds = phase2Config.outerFolds;
+numInnerFolds = phase2Config.innerFolds;
+positiveClassLabel = runConfig.classLabels.positive;
+
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
 dataPath = P.dataPath;
@@ -55,9 +62,6 @@ end
 
 %% Define pipelines
 pipelines = define_pipelines();
-metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
-    'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
-numOuterFolds = 5; numInnerFolds = 3;
 
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
