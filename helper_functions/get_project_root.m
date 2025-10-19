@@ -14,9 +14,50 @@
 %
 function rootDir = get_project_root()
     envDir = getenv('PROJECT_ROOT');
-    if ~isempty(envDir)
+    if ~isempty(envDir) && isfolder(envDir)
         rootDir = envDir;
-    else
-        rootDir = pwd;
+        return;
+    end
+
+    % Try to discover the repository root by walking upwards from the
+    % current working directory and from this helper's location. We look for
+    % a directory that appears to be the project base (contains a .git
+    % folder or the expected "src" directory).
+    searchStarts = {pwd, fileparts(mfilename('fullpath'))};
+    searchStarts = searchStarts(~cellfun(@isempty, searchStarts));
+    [~, uniqueIdx] = unique(searchStarts, 'stable');
+    searchStarts = searchStarts(uniqueIdx);
+    for i = 1:numel(searchStarts)
+        candidate = locate_repo_root(searchStarts{i});
+        if ~isempty(candidate)
+            rootDir = candidate;
+            return;
+        end
+    end
+
+    % Fallback – if no marker was found just return the current directory.
+    rootDir = pwd;
+end
+
+function root = locate_repo_root(startDir)
+    root = '';
+    if ~isfolder(startDir)
+        return;
+    end
+
+    currentDir = startDir;
+    while true
+        if isfolder(fullfile(currentDir, '.git')) || ...
+                (isfolder(fullfile(currentDir, 'src')) && ...
+                 (isfolder(fullfile(currentDir, 'results')) || isfile(fullfile(currentDir, 'README.md'))))
+            root = currentDir;
+            return;
+        end
+
+        parentDir = fileparts(currentDir);
+        if strcmp(parentDir, currentDir) || isempty(parentDir)
+            return;
+        end
+        currentDir = parentDir;
     end
 end
