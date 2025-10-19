@@ -24,7 +24,7 @@ function visualize_confusion_matrix(cfg, opts)
         opts = plot_settings(); %#ok<NASGU> % opts currently unused but kept for consistency
     end
 
-    P = setup_project_paths(cfg.projectRoot);
+    P = setup_project_paths(cfg.projectRoot, '', cfg);
 
     % Locate latest Phase 3 comparison results file
     p3_dir = fullfile(P.resultsPath, 'Phase3');

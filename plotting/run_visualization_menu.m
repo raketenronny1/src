@@ -1,11 +1,13 @@
-function run_visualization_menu()
+function run_visualization_menu(cfgInput)
 %RUN_VISUALIZATION_MENU Interactive helper to call visualization functions.
 %
-%   Presents a simple menu to generate various plots for the project.
+%   RUN_VISUALIZATION_MENU() loads the default configuration before presenting
+%   a simple text menu. Pass a configuration struct or YAML file path to use
+%   custom settings.
 
-    cfg  = configure_cfg();
+    cfg  = resolve_cfg_input(nargin, cfgInput);
     opts = plot_settings();
-    P    = setup_project_paths(cfg.projectRoot);
+    P    = setup_project_paths(cfg.projectRoot, '', cfg);
 
     choice = -1;
     while choice ~= 0
@@ -40,5 +42,18 @@ function run_visualization_menu()
                     disp('Invalid selection.');
                 end
         end
+    end
+end
+
+function cfg = resolve_cfg_input(narginValue, cfgInput)
+    if narginValue == 0 || isempty(cfgInput)
+        cfg = configure_cfg();
+    elseif isstruct(cfgInput)
+        cfg = configure_cfg(cfgInput);
+    elseif ischar(cfgInput) || (isstring(cfgInput) && isscalar(cfgInput))
+        cfg = configure_cfg('configFile', char(cfgInput));
+    else
+        error('run_visualization_menu:InvalidConfig', ...
+            'Configuration input must be empty, a struct or a file path.');
     end
 end

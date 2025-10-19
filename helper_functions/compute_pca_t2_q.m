@@ -24,7 +24,9 @@
 function results = compute_pca_t2_q(X, alpha, varianceToModel)
 
     if isempty(X) || size(X,1) < 2
-        error('compute_pca_t2_q: Not enough data for PCA.');
+        error('compute_pca_t2_q:InsufficientData', ...
+              ['Not enough data for PCA (need at least 2 rows). Troubleshooting tip: supply ', ...
+               'additional spectra or adjust upstream filtering to avoid empty datasets.']);
     end
 
     if any(isnan(X(:))) || any(isinf(X(:)))
@@ -36,9 +38,15 @@ function results = compute_pca_t2_q(X, alpha, varianceToModel)
         end
     end
 
-    [coeff, score, latent, ~, explained, mu] = pca(X, 'Algorithm','svd');
+    cacheConfig = struct('signature', struct( ...
+        'context', 'compute_pca_t2_q', ...
+        'varianceToModel', varianceToModel, ...
+        'alpha', alpha));
+    [coeff, score, latent, ~, explained, mu] = cached_pca(X, cacheConfig, 'Algorithm','svd');
     if isempty(explained)
-        error('compute_pca_t2_q: PCA returned empty results.');
+        error('compute_pca_t2_q:EmptyPCAResult', ...
+              ['PCA returned empty results. Troubleshooting tip: inspect the input matrix for ', ...
+               'NaN/Inf values or degenerate rows before calling compute_pca_t2_q.']);
     end
 
     cumulativeVariance = cumsum(explained);

@@ -113,8 +113,11 @@ function [X_flat, y_numeric_flat, y_cat_flat, patientID_flat, ...
         spectrumIndexBlocks{end+1,1} = chunkSpectrumIdx; %#ok<AGROW>
     end
 
-    if isempty(spectraBlocks)
-        error('flatten_spectra_for_pca: No valid spectra extracted.');
+    if isempty(allSpectra_cell)
+        error('flatten_spectra_for_pca:NoValidSpectra', ...
+              ['No valid spectra extracted. Troubleshooting tip: confirm the CombinedSpectra ', ...
+               'column contains numeric matrices with %d columns and that preprocessing ', ...
+               'scripts completed successfully.'], numWavenumberPoints);
     end
 
     X_flat = vertcat(spectraBlocks{:});

@@ -25,7 +25,7 @@ function visualize_fold_metrics(cfg, opts)
         opts = plot_settings();
     end
 
-    P = setup_project_paths(cfg.projectRoot);
+    P = setup_project_paths(cfg.projectRoot, '', cfg);
 
     %% Locate latest Phase 2 results file
     p2Dir = fullfile(P.resultsPath, 'Phase2');
