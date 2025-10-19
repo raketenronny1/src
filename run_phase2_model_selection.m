@@ -7,7 +7,14 @@ function run_phase2_model_selection(cfg)
 
 fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
 
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');

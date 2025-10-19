@@ -14,9 +14,14 @@ fprintf('PHASE 4: Feature Interpretation - %s\n', string(datetime('now')));
 if nargin < 1
     cfg = struct();
 end
-if ~isfield(cfg, 'projectRoot')
-    cfg.projectRoot = pwd;
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
 end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
 
 P = setup_project_paths(cfg.projectRoot); % Use helper
 dataPath = P.dataPath;
