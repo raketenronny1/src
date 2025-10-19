@@ -8,7 +8,7 @@ function export_phase_results_to_csv_json(cfg)
 %     phase2ResultsFile     - Explicit path to a Phase 2 results MAT-file.
 %     phase3ResultsFile     - Explicit path to a Phase 3 results MAT-file.
 %     exportRoot            - Destination folder for exports (defaults to
-%                             results/ relative to projectRoot).
+%                             results/Exports relative to projectRoot).
 %
 %   The function generates:
 %     * Phase 2 leaderboard table (CSV)
@@ -39,7 +39,7 @@ setup_project_paths(projectRoot);
 if strlength(cfg.exportRoot) > 0
     exportRoot = char(cfg.exportRoot);
 else
-    exportRoot = fullfile(projectRoot, 'results');
+    exportRoot = fullfile(projectRoot, 'results', 'Exports');
 end
 if ~isfolder(exportRoot); mkdir(exportRoot); end
 
@@ -325,7 +325,7 @@ cleaner = onCleanup(@() fclose(fid));
 fprintf(fid, '%s', jsonText);
 clear cleaner;
 
-fprintf('Exports written to %s\n', exportRoot);
+fprintf('Exports written to %s', exportRoot);
 
 end
 
