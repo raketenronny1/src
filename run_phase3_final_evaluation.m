@@ -15,6 +15,13 @@ if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
 if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
 if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
 
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase3Config = runConfig.phase3;
+metricNamesEval = phase3Config.metrics;
+probeMetricNames = phase3Config.probeMetrics;
+positiveClassLabel = runConfig.classLabels.positive;
+negativeClassLabel = runConfig.classLabels.negative;
+
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
 figuresPath = P.figuresPath;
@@ -43,7 +50,6 @@ if isempty(modelSets)
 end
 
 %% 3. Evaluate models across variants
-metricNamesEval = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1','PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
 resultsByVariant = struct('id',{},'description',{},'modelSets',{});
 bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{},'modelFile',{});
 
@@ -56,7 +62,7 @@ for v = 1:numel(testVariants)
     for s = 1:numel(modelSets)
         modelSet = modelSets(s);
         fprintf('  Model set: %s\n', modelSet.description);
-        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath);
+        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames);
         variantResults(end+1).modelSetID = modelSet.id; %#ok<AGROW>
         variantResults(end).modelSetDescription = modelSet.description;
         variantResults(end).models = models;
@@ -198,7 +204,7 @@ function cvInfo = load_cv_results(resultsDir)
     if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
 end
 
-function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath)
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames)
 
     models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
     X = variant.X;
@@ -222,17 +228,24 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
 
         [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
-        posIdx = find(finalModel.LDAModel.ClassNames==3);
-        metrics = calculate_performance_metrics(y,ypred,score(:,posIdx),3,metricNamesEval);
+        posIdx = find_positive_class_column(finalModel.LDAModel.ClassNames, positiveClassLabel);
+        if isempty(posIdx)
+            warning('Positive class %g not found in model output for %s.', positiveClassLabel, mf);
+            scorePositive = nan(numel(y),1);
+        else
+            scorePositive = score(:,posIdx);
+        end
+        metricOptions = struct('positiveClass', positiveClassLabel, 'metricNames', metricNamesEval);
+        metrics = calculate_performance_metrics(y, ypred, scorePositive, metricOptions);
 
         entry = struct();
         entry.name = mdlName;
         entry.metrics = metrics;
         entry.modelFile = mf;
-        entry.scores = score(:,posIdx);
+        entry.scores = scorePositive;
         entry.predicted = ypred;
 
-        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,score(:,posIdx),ypred,metricNamesEval);
+        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,scorePositive,ypred,metricNamesEval,positiveClassLabel,negativeClassLabel,probeMetricNames);
         entry.probeTable = probeTable;
         entry.probeMetrics = probeMetrics;
 
@@ -245,7 +258,11 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         end
 
         % ROC curve file per variant/model set combination
-        [Xroc,Yroc,~,AUC] = perfcurve(y,score(:,posIdx),3);
+        if all(isnan(scorePositive))
+            Xroc = [0 1]; Yroc = [0 1]; AUC = NaN;
+        else
+            [Xroc,Yroc,~,AUC] = perfcurve(y,scorePositive,positiveClassLabel);
+        end
         rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s_%s.png', entry.name, modelSet.id, variant.id));
         fig = figure('Visible','off');
         plot(Xroc,Yroc,'LineWidth',1.5); grid on;
@@ -258,7 +275,10 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
     end
 end
 
-function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
+function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames,positiveClassLabel,negativeClassLabel,probeMetricNames)
+    if nargin < 8 || isempty(probeMetricNames)
+        probeMetricNames = metricNames;
+    end
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison
     probes = unique(probeIDs,'stable');
@@ -271,8 +291,22 @@ function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,met
         idx = strcmp(probeIDs,probes(i));
         tbl.TrueLabel(i) = mode(yTrue(idx));
         tbl.MeanProbWHO3(i) = mean(scores(idx));
-        tbl.PredLabel(i) = tbl.MeanProbWHO3(i)>0.5; % 0=>WHO1, 1=>WHO3
-        tbl.PredLabel(i) = tbl.PredLabel(i).*2+1; % convert 0->1,1->3
+        if tbl.MeanProbWHO3(i) >= 0.5
+            tbl.PredLabel(i) = positiveClassLabel;
+        else
+            if ~isnan(negativeClassLabel)
+                tbl.PredLabel(i) = negativeClassLabel;
+            else
+                % Fallback: use the most common non-positive label in the cohort
+                nonPositiveLabels = unique(yTrue(yTrue ~= positiveClassLabel));
+                if ~isempty(nonPositiveLabels)
+                    tbl.PredLabel(i) = nonPositiveLabels(1);
+                else
+                    tbl.PredLabel(i) = positiveClassLabel;
+                end
+            end
+        end
     end
-    metrics = calculate_performance_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,3,metricNames);
+    metricsOptions = struct('positiveClass', positiveClassLabel, 'metricNames', probeMetricNames);
+    metrics = calculate_performance_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,metricsOptions);
 end

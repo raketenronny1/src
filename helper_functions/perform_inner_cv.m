@@ -5,7 +5,7 @@
 
 function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
-    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
+    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames, positiveClassLabel)
 
     paramGridCells = {}; 
     paramNames = {};     
@@ -107,10 +107,10 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     [~, ~, groupIdxPerSpectrum_inner] = unique(probeIDs_inner_train_full, 'stable'); 
     for i = 1:length(uniqueProbesInner)
         probeSpectraLabels_inner = y_inner_train_full(groupIdxPerSpectrum_inner == i);
-        if any(probeSpectraLabels_inner == 3) 
-            probe_WHO_Grade_inner(i) = 3;
+        if any(probeSpectraLabels_inner == positiveClassLabel)
+            probe_WHO_Grade_inner(i) = positiveClassLabel;
         else
-            probe_WHO_Grade_inner(i) = mode(probeSpectraLabels_inner); 
+            probe_WHO_Grade_inner(i) = mode(probeSpectraLabels_inner);
         end
     end
     try
@@ -265,25 +265,18 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             if ~isempty(classifier_inner) && ~isempty(X_fs_val_fold) && ~isempty(y_val_fold)
                 try
                     [y_pred_inner, y_scores_inner] = predict(classifier_inner, X_fs_val_fold);
-                    positiveClassLabel = 3; 
                     classOrder_inner = classifier_inner.ClassNames;
-                    positiveClassColIdx_inner = [];
-                    if isnumeric(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    elseif iscategorical(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(string(classOrder_inner)) == positiveClassLabel);
-                    elseif iscellstr(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(classOrder_inner) == positiveClassLabel);
-                    else 
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    end
-                    
-                    if isempty(positiveClassColIdx_inner) || ( ~isempty(positiveClassColIdx_inner) && (max(positiveClassColIdx_inner) > size(y_scores_inner,2)) )
+                    positiveClassColIdx_inner = find_positive_class_column(classOrder_inner, positiveClassLabel);
+
+                    metricOptions = struct('positiveClass', positiveClassLabel, 'metricNames', metricNames);
+                    if isempty(positiveClassColIdx_inner) || positiveClassColIdx_inner > size(y_scores_inner,2)
                         currentInnerFoldMetricsStruct = struct();
-                        for iMet=1:length(metricNames), currentInnerFoldMetricsStruct.(metricNames{iMet}) = NaN; end
+                        for iMet = 1:length(metricNames)
+                            currentInnerFoldMetricsStruct.(metricNames{iMet}) = NaN;
+                        end
                     else
                         scores_for_positive_class_inner = y_scores_inner(:, positiveClassColIdx_inner);
-                        currentInnerFoldMetricsStruct = calculate_performance_metrics(y_val_fold, y_pred_inner, scores_for_positive_class_inner, positiveClassLabel, metricNames);
+                        currentInnerFoldMetricsStruct = calculate_performance_metrics(y_val_fold, y_pred_inner, scores_for_positive_class_inner, metricOptions);
                     end
                     tempFoldMetricsArr(kInner, :) = cell2mat(struct2cell(currentInnerFoldMetricsStruct))';
                 catch ME_predict_eval

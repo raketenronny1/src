@@ -9,6 +9,13 @@ fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
 
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase2Config = runConfig.phase2;
+metricNames = phase2Config.metrics;
+numOuterFolds = phase2Config.outerFolds;
+numInnerFolds = phase2Config.innerFolds;
+positiveClassLabel = runConfig.classLabels.positive;
+
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
 dataPath = P.dataPath;
@@ -53,9 +60,6 @@ end
 
 %% Define pipelines
 pipelines = define_pipelines();
-metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
-    'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
-numOuterFolds = 5; numInnerFolds = 3;
 
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
@@ -176,12 +180,19 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames,positiveClassLabel);
             outerBestHyper{k}=bestHyper;
             [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
             [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(finalModel.LDAModel.ClassNames==3);
-            m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
+            posIdx = find_positive_class_column(finalModel.LDAModel.ClassNames, positiveClassLabel);
+            if isempty(posIdx)
+                warning('Positive class %g not present in model outputs. Assigning NaN metrics.', positiveClassLabel);
+                scorePositive = [];
+            else
+                scorePositive = score(:,posIdx);
+            end
+            metricOptions = struct('positiveClass', positiveClassLabel, 'metricNames', metricNames);
+            m = calculate_performance_metrics(y_te, ypred, scorePositive, metricOptions);
             outerMetrics(k,:)=cell2mat(struct2cell(m))';
         end
         res=struct();
