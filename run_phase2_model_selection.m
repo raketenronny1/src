@@ -6,19 +6,29 @@ function run_phase2_model_selection(cfg)
 % outliers removed.
 % Accepts either a configuration struct or a YAML file path.
 
-fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
-if nargin < 1 || isempty(cfg)
-    cfg = configure_cfg();
-elseif ischar(cfg) || (isstring(cfg) && isscalar(cfg))
-    cfg = configure_cfg('configFile', char(cfg));
-elseif ~isstruct(cfg)
-    error('run_phase2_model_selection:InvalidConfig', ...
-        'Configuration input must be empty, a struct or a file path.');
+if nargin < 1, cfg = struct(); end
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
 end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
+
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase2Config = runConfig.phase2;
+metricNames = phase2Config.metrics;
+numOuterFolds = phase2Config.outerFolds;
+numInnerFolds = phase2Config.innerFolds;
+positiveClassLabel = runConfig.classLabels.positive;
 
 % Add helper_functions/ to the path and obtain common directories
-P = setup_project_paths(cfg.projectRoot,'Phase2',cfg);
+P = setup_project_paths(cfg.projectRoot,'Phase2');
+
+logger = setup_logging(cfg, 'Phase2_ModelSelection');
+loggerCleanup = onCleanup(@()logger.closeFcn()); %#ok<NASGU>
+log_message('info', 'PHASE 2: Model Selection - %s', string(datetime('now')));
 dataPath = P.dataPath;
 resultsPathRoot = P.resultsPath;
 modelsPathRoot = P.modelsPath;
@@ -26,22 +36,17 @@ if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
 %% Load base training data
-trainTablePath = fullfile(dataPath,'data_table_train.mat');
-if ~isfile(trainTablePath)
-    error('Training table not found: %s', trainTablePath);
-end
-load(trainTablePath,'dataTableTrain');
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
-
-[X_all, y_all, ~, probeIDs_all] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+trainData = load_dataset_split(dataPath, 'train');
+wavenumbers_roi = trainData.wavenumbers;
+X_all = trainData.X;
+y_all = trainData.y;
+probeIDs_all = trainData.probeIDs;
 
 %% Build dataset variants
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);
 
 if cfg.parallelOutlierComparison
-    fprintf('Running parallel comparison for %d dataset variants.\n', numel(datasetVariants));
+    log_message('info', 'Running parallel comparison for %d dataset variants.', numel(datasetVariants));
     datasetsToProcess = datasetVariants;
 else
     % Select variant based on legacy flag for backwards compatibility
@@ -59,16 +64,15 @@ else
     datasetsToProcess = datasetVariants(variantIdx);
 end
 
+datasetReporter = ProgressReporter('Phase 2 datasets', numel(datasetsToProcess), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
+
 %% Define pipelines
 pipelines = define_pipelines();
-metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
-    'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
-numOuterFolds = 5; numInnerFolds = 3;
 
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
     ds = datasetsToProcess(d);
-    fprintf('\n--- Dataset: %s ---\n', ds.description);
+    log_message('info', '--- Dataset: %s ---', ds.description);
 
     if cfg.parallelOutlierComparison
         resultsPath = fullfile(resultsPathRoot, ds.folderName);
@@ -82,7 +86,7 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath);
+        numInnerFolds, resultsPath, modelsPath, 'Verbose', cfg.verbose);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -94,7 +98,7 @@ for d = 1:numel(datasetsToProcess)
 
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
         'numOuterFolds','numInnerFolds','savedModels','ds');
-    fprintf('Results for %s saved to %s\n', ds.id, resultsFile);
+    log_message('info', 'Results for %s saved to %s', ds.id, resultsFile);
 end
 end
 
@@ -115,7 +119,7 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
         outlierStruct = identify_joint_t2q_outliers(X_all, cfg.outlierAlpha, cfg.outlierVarianceToModel);
         keepMask = outlierStruct.isJointInlier;
         if ~any(keepMask)
-            warning('All spectra flagged as joint outliers. Filtered dataset skipped.');
+            log_message('warning', 'All spectra flagged as joint outliers. Filtered dataset skipped.');
         else
             filteredStruct = baseStruct;
             filteredStruct.id = 'FilteredT2Q';
@@ -128,38 +132,61 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
             filteredStruct.mask = keepMask;
             filteredStruct.outlierInfo = outlierStruct;
             datasetVariants(end+1) = filteredStruct; %#ok<AGROW>
-            fprintf('Joint T2/Q filtering removed %d/%d spectra.\n', ...
+            log_message('info', 'Joint T2/Q filtering removed %d/%d spectra.', ...
                 outlierStruct.numJointOutliers, numel(keepMask));
         end
     catch ME
-        warning('Failed to compute joint T2/Q outliers: %s', ME.message);
+        log_message('warning', 'Failed to compute joint T2/Q outliers: %s', ME.message);
     end
 end
 
-function pipelines = define_pipelines()
-    pipelines = cell(0,1); pidx=0;
+function pipelinesOut = define_pipelines()
+    pipelineList = cell(0,1); pidx = 0;
 
-    p=struct(); p.name='BaselineLDA'; p.feature_selection_method='none'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor'}; p.binningFactors=[4 8];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "BaselineLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.NoFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[1 4 8]), ...
+        {'binningFactor'});
 
-    p=struct(); p.name='FisherLDA'; p.feature_selection_method='fisher'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','fisherFeaturePercent'};
-    p.binningFactors=[4 8]; p.fisherFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4 0.5];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "FisherLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.FisherFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'fisherFeaturePercent',[0.05 0.1 0.2 0.3 0.4 0.5]), ...
+        {'binningFactor','fisherFeaturePercent'});
 
-    p=struct(); p.name='PCALDA'; p.feature_selection_method='pca'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','pcaVarianceToExplain'};
-    p.binningFactors=[4 8]; p.pcaVarianceToExplain_range=[0.90 0.95 0.99];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "PCALDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.PCAFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'pcaVarianceToExplain',[0.90 0.95 0.99]), ...
+        {'binningFactor','pcaVarianceToExplain'});
 
-    p=struct(); p.name='MRMRLDA'; p.feature_selection_method='mrmr'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','mrmrFeaturePercent'};
-    p.binningFactors=[4 8]; p.mrmrFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "MRMRLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.MRMRFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'mrmrFeaturePercent',[0.05 0.1 0.2 0.3 0.4]), ...
+        {'binningFactor','mrmrFeaturePercent'});
+    pipelinesOut = pipelineList;
 end
 
-function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
+function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath, varargin)
+
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -172,11 +199,15 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
     resultsPerPipeline=cell(numel(pipelines),1);
     savedModels = cell(numel(pipelines),1);
 
+    pipelineReporter = ProgressReporter(sprintf('Pipelines - %s', ds.id), numel(pipelines), 'Verbose', verbose, 'ThrottleSeconds', 0);
+
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
-        fprintf('\nEvaluating pipeline: %s\n', pipe.name);
+        fprintf('\nEvaluating pipeline: %s\n', char(pipe.Name));
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
+        innerDiagnosticsPerFold = cell(numOuterFolds,1);
+        trainingDiagnosticsPerFold = cell(numOuterFolds,1);
         for k=1:numOuterFolds
             trainIdx = training(outerCV,k);
             testIdx  = test(outerCV,k);
@@ -184,27 +215,75 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            [bestHyper,~,innerDiagnostics] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            innerDiagnosticsPerFold{k} = innerDiagnostics;
+            if strcmpi(innerDiagnostics.status, 'error')
+                log_pipeline_message('error', sprintf('run_phase2:innerCV:%s', pipe.name), ...
+                    'Inner CV failed on outer fold %d. Marking fold as invalid.', k);
+                outerBestHyper{k} = struct();
+                continue;
+            end
+
             outerBestHyper{k}=bestHyper;
-            [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
-            [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(finalModel.LDAModel.ClassNames==3);
-            m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
-            outerMetrics(k,:)=cell2mat(struct2cell(m))';
+            [finalModel,~,~, foldTrainDiagnostics] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
+            trainingDiagnosticsPerFold{k} = foldTrainDiagnostics;
+            if strcmpi(foldTrainDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
+                log_pipeline_message('error', sprintf('run_phase2:train:%s', pipe.name), ...
+                    'Failed to train outer fold %d model. Skipping metrics.', k);
+                outerMetrics(k,:) = NaN;
+                outerBestHyper{k} = struct();
+                continue;
+            end
+
+            try
+                [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+                posIdx=find(finalModel.LDAModel.ClassNames==3);
+                m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
+                outerMetrics(k,:)=cell2mat(struct2cell(m))';
+            catch ME_outer_eval
+                log_pipeline_message('warning', sprintf('run_phase2:evaluation:%s', pipe.name), ...
+                    'Evaluation failed on outer fold %d: %s', k, ME_outer_eval.message);
+                outerMetrics(k,:) = NaN;
+            end
         end
         res=struct();
         res.pipelineConfig=pipe;
         res.outerFoldMetrics_raw=outerMetrics;
         res.outerFoldMetrics_mean=nanmean(outerMetrics,1);
         res.outerFoldBestHyperparams=outerBestHyper;
+        res.outerFoldDiagnostics = struct();
+        res.outerFoldDiagnostics.inner = innerDiagnosticsPerFold;
+        res.outerFoldDiagnostics.training = trainingDiagnosticsPerFold;
 
         aggHyper=aggregate_best_hyperparams(outerBestHyper);
-        [finalModel,selectedIdx,selectedWn]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
-        modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
-        save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds');
+        if isempty(fieldnames(aggHyper))
+            log_pipeline_message('error', sprintf('run_phase2:aggregate:%s', pipe.name), ...
+                'No valid hyperparameters aggregated. Skipping final model training.');
+            finalModel = struct();
+            selectedIdx = [];
+            selectedWn = [];
+            modelFile = '';
+            finalDiagnostics = struct();
+            finalDiagnostics.status = 'error';
+            finalDiagnostics.entries = struct('timestamp',{},'level',{},'context',{},'message',{});
+            finalDiagnostics.errors = {};
+            finalDiagnostics.context = 'train_final_pipeline_model';
+        else
+            [finalModel,selectedIdx,selectedWn,finalDiagnostics]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
+            if strcmpi(finalDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
+                log_pipeline_message('error', sprintf('run_phase2:finalTrain:%s', pipe.name), ...
+                    'Failed to train final model. Model will not be saved.');
+                modelFile = '';
+            else
+                modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
+                save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds','finalDiagnostics');
+            end
+        end
         res.finalModelFile=modelFile;
+        res.finalModelDiagnostics = finalDiagnostics;
 
         resultsPerPipeline{iPipe}=res;
         savedModels{iPipe}=modelFile;
+        pipelineReporter.update(1, sprintf('%s complete', pipe.name));
     end
 end

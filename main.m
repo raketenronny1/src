@@ -9,22 +9,20 @@ function main(cfgInput)
 %   Example:
 %       main('config/custom.yaml');
 
-    cfg = resolve_cfg_input(nargin, cfgInput);
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg();
 
     run_phase2_model_selection(cfg);
     run_phase3_final_evaluation(cfg);
     run_phase4_feature_interpretation(cfg);
 end
 
-function cfg = resolve_cfg_input(narginValue, cfgInput)
-    if narginValue == 0 || isempty(cfgInput)
-        cfg = configure_cfg();
-    elseif isstruct(cfgInput)
-        cfg = configure_cfg(cfgInput);
-    elseif ischar(cfgInput) || (isstring(cfgInput) && isscalar(cfgInput))
-        cfg = configure_cfg('configFile', char(cfgInput));
-    else
-        error('main:InvalidConfigInput', ...
-            'Config input must be empty, a struct or a file path.');
-    end
-end
+cfg = validate_configuration(cfg);
+
+run_phase2_model_selection(cfg);
+run_phase3_final_evaluation(cfg);
+run_phase4_feature_interpretation(cfg);

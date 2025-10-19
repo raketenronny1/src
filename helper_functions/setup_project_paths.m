@@ -42,6 +42,8 @@ function P = setup_project_paths(projectRoot, phaseName, cfg)
     P.projectRoot    = projectRoot;
     P.srcPath        = fullfile(projectRoot, 'src');
     P.helperFunPath  = fullfile(P.srcPath, 'helper_functions');
+    P.pipelinePath   = fullfile(P.srcPath, 'pipelines');
+    P.dataPath       = fullfile(projectRoot, 'data');
 
     dataDirName    = get_cfg_dir(cfg, 'dataDir', 'data');
     resultsDirName = get_cfg_dir(cfg, 'resultsDir', 'results');
@@ -68,9 +70,12 @@ function P = setup_project_paths(projectRoot, phaseName, cfg)
         end
     end
 
-    % Add helper functions to path
+    % Add helper functions and pipeline classes to the MATLAB path
     if exist(P.helperFunPath, 'dir') && ~contains(path, P.helperFunPath)
         addpath(P.helperFunPath);
+    end
+    if exist(P.pipelinePath, 'dir') && ~contains(path, P.pipelinePath)
+        addpath(P.pipelinePath);
     end
 end
 

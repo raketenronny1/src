@@ -10,7 +10,6 @@ function run_phase4_feature_interpretation(cfg)
 
 %% 0. Initialization
 % =========================================================================
-fprintf('PHASE 4: Feature Interpretation - %s\n', string(datetime('now')));
 
 if nargin < 1 || isempty(cfg)
     cfg = configure_cfg();
@@ -20,11 +19,16 @@ elseif ~isstruct(cfg)
     error('run_phase4_feature_interpretation:InvalidConfig', ...
         'Configuration input must be empty, a struct or a file path.');
 end
-if ~isfield(cfg, 'projectRoot')
-    cfg.projectRoot = pwd;
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
 end
 
-P = setup_project_paths(cfg.projectRoot, '', cfg); % Use helper
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
+
+P = setup_project_paths(cfg.projectRoot); % Use helper
 dataPath = P.dataPath;
 resultsPath = fullfile(P.resultsPath, 'Phase4');
 figuresPath = fullfile(P.figuresPath, 'Phase4');
@@ -32,11 +36,15 @@ figuresPath = fullfile(P.figuresPath, 'Phase4');
 if ~exist(resultsPath, 'dir'), mkdir(resultsPath); end
 if ~exist(figuresPath, 'dir'), mkdir(figuresPath); end
 
+logger = setup_logging(cfg, 'Phase4_FeatureInterpretation');
+loggerCleanup = onCleanup(@()logger.closeFcn()); %#ok<NASGU>
+log_message('info', 'PHASE 4: Feature Interpretation - %s', string(datetime('now')));
+
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 
 %% 1. Load Final Model Package from Phase 3
 % =========================================================================
-fprintf('Loading final model package from Phase 3...\n');
+log_message('info', 'Loading final model package from Phase 3...');
 compFiles = dir(fullfile(P.resultsPath, 'Phase3', '*_Phase3_ComparisonResults.mat'));
 if isempty(compFiles)
     error('No Phase 3 comparison results found. Run Phase 3 first.');
@@ -45,8 +53,12 @@ end
 latestComp = load(fullfile(compFiles(idxSort(1)).folder, compFiles(idxSort(1)).name),'bestModelInfo');
 
 % --- Get Best Pipeline Name and Model File ---
-bestPipelineName = latestComp.bestModelInfo.name;
-latestModelFile = latestComp.bestModelInfo.modelFile;
+bestInfo = latestComp.bestModelInfo;
+if numel(bestInfo) > 1
+    bestInfo = bestInfo(1);
+end
+bestPipelineName = char(string(bestInfo.modelName));
+latestModelFile = bestInfo.modelFile;
 fprintf('== Best pipeline identified: %s ==\n', bestPipelineName);
 fprintf('Using final model from: %s\n', latestModelFile);
 
@@ -54,23 +66,31 @@ load(latestModelFile,'finalModel');
 finalModelPackage = finalModel;
 
 % Extract necessary components
-finalLDAModel = finalModelPackage.LDAModel;
-selectedWavenumbers = finalModelPackage.selectedWavenumbers;
-selectedFeatureIndices_in_binned = finalModelPackage.selectedFeatureIndices;
+if isa(finalModelPackage,'pipelines.TrainedClassificationPipeline')
+    finalLDAModel = finalModelPackage.getClassifierModel();
+    selectedWavenumbers = finalModelPackage.getSelectedWavenumbers();
+    selectedFeatureIndices_in_binned = finalModelPackage.getSelectedFeatureIndices();
+    binningFactorForPlot = finalModelPackage.Binner.Factor;
+else
+    finalLDAModel = finalModelPackage.LDAModel;
+    selectedWavenumbers = finalModelPackage.selectedWavenumbers;
+    selectedFeatureIndices_in_binned = finalModelPackage.selectedFeatureIndices;
+    binningFactorForPlot = finalModelPackage.binningFactor;
+end
 
-if isempty(selectedWavenumbers) || isempty(finalLDAModel.Coeffs)
+if isempty(selectedWavenumbers) || isempty(finalLDAModel) || isempty(finalLDAModel.Coeffs)
     error('Selected wavenumbers or LDA coefficients not found in the loaded model package.');
 end
 
-fprintf('%d features (binned wavenumbers) were used by the final model.\n', length(selectedWavenumbers));
+log_message('info', '%d features (binned wavenumbers) were used by the final model.', length(selectedWavenumbers));
 
 
 %% 2. Extract and Analyze LDA Coefficients
 % =========================================================================
-fprintf('\n--- Analyzing LDA Coefficients ---\n');
+log_message('info', '--- Analyzing LDA Coefficients ---');
 
 classNames = finalLDAModel.ClassNames; 
-fprintf('LDA Model Class Names: %s\n', mat2str(classNames));
+log_message('info', 'LDA Model Class Names: %s', mat2str(classNames));
 idx_who3_in_model = find(classNames == 3);
 idx_who1_in_model = find(classNames == 1);
 if isempty(idx_who3_in_model) || isempty(idx_who1_in_model)
@@ -80,10 +100,10 @@ end
 ldaCoefficients = [];
 if idx_who3_in_model == 2 
     ldaCoefficients = finalLDAModel.Coeffs(1,2).Linear;
-    fprintf('Interpreting positive LDA coefficients as indicative of WHO-3.\n');
-elseif idx_who1_in_model == 2 
+    log_message('info', 'Interpreting positive LDA coefficients as indicative of WHO-3.');
+elseif idx_who1_in_model == 2
     ldaCoefficients = -finalLDAModel.Coeffs(1,2).Linear;
-    fprintf('Interpreting NEGATIVE of Coeffs(1,2).Linear as indicative of WHO-3.\n');
+    log_message('info', 'Interpreting NEGATIVE of Coeffs(1,2).Linear as indicative of WHO-3.');
 else
     error('Unexpected class order or setup in LDA model coefficients.');
 end
@@ -106,7 +126,7 @@ featureImportanceTable = table(...
 
 %% 2.5 Prepare Training Data for Visualization
 % =========================================================================
-fprintf('\n--- Preparing training data for Phase 4 visualization ---\n');
+log_message('info', '--- Preparing training data for Phase 4 visualization ---');
 trainTbl = load(fullfile(dataPath,'data_table_train.mat'),'dataTableTrain');
 wData = load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
 X_train_full_for_plot = vertcat(trainTbl.dataTableTrain.CombinedSpectra{:});
@@ -115,7 +135,6 @@ y_train_full_for_plot = vertcat(y_train_full_for_plot{:});
 wavenumbers_original = wData.wavenumbers_roi;
 if iscolumn(wavenumbers_original); wavenumbers_original = wavenumbers_original'; end
 
-binningFactorForPlot = finalModelPackage.binningFactor;
 if binningFactorForPlot > 1
     [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
 else
@@ -125,16 +144,16 @@ end
 
 [~, sortIdxCoeff] = sort(abs(featureImportanceTable.LDACoefficient), 'descend');
 sortedFeatureImportanceTable = featureImportanceTable(sortIdxCoeff,:);
-fprintf('\nTop 10 Most Influential Features (Binned Wavenumbers):\n');
+log_message('info', 'Top 10 Most Influential Features (Binned Wavenumbers):');
 disp(sortedFeatureImportanceTable(1:min(10, height(sortedFeatureImportanceTable)),:));
 featureTableFilename = fullfile(resultsPath, sprintf('%s_Phase4_FeatureImportanceTable.csv', dateStr));
 writetable(sortedFeatureImportanceTable, featureTableFilename);
-fprintf('Full feature importance table saved to: %s\n', featureTableFilename);
+log_message('info', 'Full feature importance table saved to: %s', featureTableFilename);
 
 
 %% 3. Plot LDA Coefficients (Feature Importance Spectrum)
 % =========================================================================
-fprintf('\n--- Plotting LDA Coefficient Spectrum ---\n');
+log_message('info', '--- Plotting LDA Coefficient Spectrum ---');
 figure('Name', 'LDA Coefficient Spectrum for Selected Features', 'Position', [100, 100, 900, 600]);
 [plot_wavenumbers_from_table, sortIdxWn_plot] = sort(featureImportanceTable.BinnedWavenumber_cm_neg1);
 plot_coeffs_from_table = featureImportanceTable.LDACoefficient(sortIdxWn_plot);
@@ -144,7 +163,7 @@ hold on;
 plot(plot_wavenumbers_from_table, zeros(size(plot_wavenumbers_from_table)), 'k--');
 hold off;
 
-xlabel(sprintf('Binned Wavenumber (cm^{-1}) - Binning Factor %d', finalModelPackage.binningFactor));
+xlabel(sprintf('Binned Wavenumber (cm^{-1}) - Binning Factor %d', binningFactorForPlot));
 ylabel('LDA Coefficient Value');
 
 % --- DYNAMIC TITLE ---
@@ -164,11 +183,11 @@ end
 ldaCoeffPlotFilenameBase = fullfile(figuresPath, sprintf('%s_Phase4_LDACoeffSpectrum_%s', dateStr, bestPipelineName));
 savefig(gcf, [ldaCoeffPlotFilenameBase, '.fig']);
 exportgraphics(gcf, [ldaCoeffPlotFilenameBase, '.tiff'], 'Resolution', 300);
-fprintf('LDA coefficient spectrum plot saved to: %s.(fig/tiff)\n', ldaCoeffPlotFilenameBase);
+log_message('info', 'LDA coefficient spectrum plot saved to: %s.(fig/tiff)', ldaCoeffPlotFilenameBase);
 
 %% 4. Plot Mean Spectra with Highlighted Important Regions
 % =========================================================================
-fprintf('\n--- Generating Mean Spectra Plot with Highlighted Key Features ---\n');
+log_message('info', '--- Generating Mean Spectra Plot with Highlighted Key Features ---');
 
 if exist('X_train_binned_for_plot', 'var') && ~isempty(X_train_binned_for_plot)
     y_train_for_mean_spectra = y_train_full_for_plot;
@@ -192,7 +211,7 @@ if exist('X_train_binned_for_plot', 'var') && ~isempty(X_train_binned_for_plot)
     h_who3 = plot(ax1, wavenumbers_binned_for_plot, mean_spectrum_who3_binned, 'Color', colorWHO3, 'LineWidth', 1.5, 'DisplayName', 'Mittelwert WHO-3');
     legend_handles = [legend_handles, h_who3];
     
-    selectedWnsFromModel = finalModelPackage.selectedWavenumbers;
+    selectedWnsFromModel = selectedWavenumbers;
     ldaCoeffsFromModel = ldaCoefficients; 
 
     for k_idx = 1:length(selectedWnsFromModel)
@@ -251,9 +270,9 @@ if exist('X_train_binned_for_plot', 'var') && ~isempty(X_train_binned_for_plot)
     meanSpectraPlotFilenameBase = fullfile(figuresPath, sprintf('%s_Phase4_MeanSpectra_Highlighted_%s', dateStr, bestPipelineName));
     savefig(gcf, [meanSpectraPlotFilenameBase, '.fig']);
     exportgraphics(gcf, [meanSpectraPlotFilenameBase, '.tiff'], 'Resolution', 300);
-    fprintf('Mean spectra plot with highlighted features saved to: %s.(fig/tiff)\n', meanSpectraPlotFilenameBase);
+    log_message('info', 'Mean spectra plot with highlighted features saved to: %s.(fig/tiff)', meanSpectraPlotFilenameBase);
 else
-    fprintf('Skipping mean spectra plot due to missing training data for plotting.\n');
+    log_message('warning', 'Skipping mean spectra plot due to missing training data for plotting.');
 end
 
 end

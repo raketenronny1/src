@@ -28,7 +28,9 @@ function cfg = configure_cfg(varargin)
     end
 
     if mod(numel(args),2) ~= 0
-        error('Name-value arguments must occur in pairs.');
+        error('configure_cfg:NameValuePairs', ...
+              ['Name-value arguments must occur in pairs. Troubleshooting tip: check configure_cfg ', ...
+               'calls for a missing value or trailing parameter.']);
     end
 
     configFile = '';
@@ -282,5 +284,7 @@ function value = parse_scalar(text)
     else
         value = text;
     end
+
+    cfg = validate_configuration(cfg);
 end
 
