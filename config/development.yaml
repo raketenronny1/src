@@ -1,0 +1,5 @@
+# Development overrides for local testing
+analysis:
+  parallelOutlierComparison: false
+exports:
+  exportRoot: results/DevExports

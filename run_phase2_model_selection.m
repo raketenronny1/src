@@ -4,13 +4,21 @@ function run_phase2_model_selection(cfg)
 % Model and feature selection with optional outlier removal.
 % Supports parallel evaluation of data with and without joint T2/Q
 % outliers removed.
+% Accepts either a configuration struct or a YAML file path.
 
 fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
-if nargin < 1, cfg = struct(); end
+if nargin < 1 || isempty(cfg)
+    cfg = configure_cfg();
+elseif ischar(cfg) || (isstring(cfg) && isscalar(cfg))
+    cfg = configure_cfg('configFile', char(cfg));
+elseif ~isstruct(cfg)
+    error('run_phase2_model_selection:InvalidConfig', ...
+        'Configuration input must be empty, a struct or a file path.');
+end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
 
 % Add helper_functions/ to the path and obtain common directories
-P = setup_project_paths(cfg.projectRoot,'Phase2');
+P = setup_project_paths(cfg.projectRoot,'Phase2',cfg);
 dataPath = P.dataPath;
 resultsPathRoot = P.resultsPath;
 modelsPathRoot = P.modelsPath;

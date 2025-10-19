@@ -6,19 +6,25 @@ function run_phase4_feature_interpretation(cfg)
 % and their importance as indicated by LDA coefficients.
 %
 % Date Modified: 2025-06-07 (Dynamic plot labeling based on best pipeline)
+% Accepts either a configuration struct or a YAML file path.
 
 %% 0. Initialization
 % =========================================================================
 fprintf('PHASE 4: Feature Interpretation - %s\n', string(datetime('now')));
 
-if nargin < 1
-    cfg = struct();
+if nargin < 1 || isempty(cfg)
+    cfg = configure_cfg();
+elseif ischar(cfg) || (isstring(cfg) && isscalar(cfg))
+    cfg = configure_cfg('configFile', char(cfg));
+elseif ~isstruct(cfg)
+    error('run_phase4_feature_interpretation:InvalidConfig', ...
+        'Configuration input must be empty, a struct or a file path.');
 end
 if ~isfield(cfg, 'projectRoot')
     cfg.projectRoot = pwd;
 end
 
-P = setup_project_paths(cfg.projectRoot); % Use helper
+P = setup_project_paths(cfg.projectRoot, '', cfg); % Use helper
 dataPath = P.dataPath;
 resultsPath = fullfile(P.resultsPath, 'Phase4');
 figuresPath = fullfile(P.figuresPath, 'Phase4');

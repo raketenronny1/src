@@ -9,6 +9,7 @@ This repository contains MATLAB code for analysing Fourier-transform infrared (F
 - `helper_functions/` – refactored functions used throughout the pipeline.
 - `plotting/` – scripts for generating project figures.
 - `archive/` – older scripts retained for reference.
+- `config/` – YAML configuration files (default and environment-specific).
 
 - Top-level scripts such as `run_phase2_model_selection.m`, `run_phase3_final_evaluation.m` and `run_phase4_feature_interpretation.m` implement the main phases of the analysis.
 
@@ -41,16 +42,35 @@ This repository includes a lightweight spider plot helper function for generatin
 
 ## Configuration helper
 
-Use the `configure_cfg.m` function to create or update the `cfg` structure that
-controls the main scripts. It fills in sensible defaults for missing fields and
-accepts name/value pairs for overrides.
+Configuration lives under `config/`. The project ships with
+`config/default.yaml` and optional environment-specific overrides (for example
+`config/development.yaml`). Use the `configure_cfg.m` function to load these
+files and populate the `cfg` structure that controls the main scripts. It fills
+in sensible defaults for missing fields and accepts name/value pairs for
+overrides.
 
 ```matlab
+addpath('src');
 cfg = configure_cfg();
 cfg.useOutlierRemoval = true;   % set false to keep all training data
 cfg.parallelOutlierComparison = true; % evaluate both cleaned and full datasets in parallel
-run('src/main.m')
+main(cfg);
+
+% Or run directly from a YAML file
+main('config/development.yaml');
 ```
+
+To run with a custom configuration file, either set the `MENINGIOMA_CONFIG`
+environment variable or provide a path directly. Scripts that accept a `cfg`
+argument also accept a YAML file path:
+
+```matlab
+cfg = configure_cfg('configFile','config/development.yaml');
+run_phase2_model_selection('config/development.yaml');
+```
+
+The helper automatically loads `config/<ENV>.yaml` when the
+`MENINGIOMA_ENV=<ENV>` environment variable is set.
 
 ## Analysis pipeline
 
@@ -73,7 +93,7 @@ Run nested cross-validation using:
 The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
 
 ```matlab
-run('src/run_phase2_model_selection.m')
+run_phase2_model_selection();
 ```
 
 Set `cfg.parallelOutlierComparison = true` before running the phase to train
@@ -90,7 +110,7 @@ Train the MRMR–LDA pipeline on the full training set and evaluate on the test 
 MRMR features are chosen based on a percentage of the binned spectrum rather than a fixed count.
 
 ```matlab
-run('src/run_phase3_final_evaluation.m')
+run_phase3_final_evaluation();
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
@@ -100,7 +120,7 @@ Models are stored in `models/Phase3` and metrics in `results/Phase3`.
 Interpret the trained model by plotting LDA coefficients for the selected wavenumbers and generating mean spectra visualisations. Statistical p-value calculations were removed to streamline the phase.
 
 ```matlab
-run('src/run_phase4_feature_interpretation.m')
+run_phase4_feature_interpretation();
 ```
 
 Outputs appear in `results/Phase4` and `figures/Phase4`.
