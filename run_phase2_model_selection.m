@@ -17,6 +17,18 @@ modelsPathRoot = P.modelsPath;
 if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
+% Configure random seed for reproducibility
+phaseLogger = [];
+if isfield(cfg,'logger'); phaseLogger = cfg.logger; end
+[seedPhase2, seedSourcePhase2] = resolve_random_seed(cfg, 'randomSeedPhase2');
+rngInfoPhase2 = set_random_seed(seedPhase2, 'Logger', phaseLogger, ...
+    'Context', 'Phase 2 nested cross-validation');
+rngMetadataBase = struct('phase','Phase2', ...
+    'seedSource', seedSourcePhase2, ...
+    'seedValueRequested', seedPhase2, ...
+    'seedValueApplied', rngInfoPhase2.appliedSeed, ...
+    'rngInfo', rngInfoPhase2);
+
 %% Load base training data
 trainTablePath = fullfile(dataPath,'data_table_train.mat');
 if ~isfile(trainTablePath)
@@ -84,8 +96,12 @@ for d = 1:numel(datasetsToProcess)
         resultsFile = fullfile(resultsPath, sprintf('%s_Phase2_AllPipelineResults.mat', dateStr));
     end
 
+    metadata = rngMetadataBase;
+    metadata.datasetID = ds.id;
+    metadata.generatedOn = datetime('now');
+
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
-        'numOuterFolds','numInnerFolds','savedModels','ds');
+        'numOuterFolds','numInnerFolds','savedModels','ds','metadata');
     fprintf('Results for %s saved to %s\n', ds.id, resultsFile);
 end
 end
@@ -125,6 +141,27 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
         end
     catch ME
         warning('Failed to compute joint T2/Q outliers: %s', ME.message);
+    end
+end
+
+function [seedValue, sourceField] = resolve_random_seed(cfg, primaryField)
+
+    seedValue = [];
+    sourceField = '';
+
+    if nargin < 2
+        primaryField = '';
+    end
+
+    if ~isempty(primaryField) && isfield(cfg, primaryField) && ~isempty(cfg.(primaryField))
+        seedValue = cfg.(primaryField);
+        sourceField = primaryField;
+        return;
+    end
+
+    if isfield(cfg, 'randomSeed') && ~isempty(cfg.randomSeed)
+        seedValue = cfg.randomSeed;
+        sourceField = 'randomSeed';
     end
 end
 

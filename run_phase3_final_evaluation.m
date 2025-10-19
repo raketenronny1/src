@@ -23,6 +23,18 @@ resultsPathP2 = fullfile(cfg.projectRoot,'results','Phase2');
 if ~isfolder(resultsPath); mkdir(resultsPath); end
 if ~isfolder(figuresPath); mkdir(figuresPath); end
 
+% Configure random seed for reproducibility
+phaseLogger = [];
+if isfield(cfg,'logger'); phaseLogger = cfg.logger; end
+[seedPhase3, seedSourcePhase3] = resolve_phase3_seed(cfg);
+rngInfoPhase3 = set_random_seed(seedPhase3, 'Logger', phaseLogger, ...
+    'Context', 'Phase 3 final evaluation');
+metadata = struct('phase','Phase3', ...
+    'seedSource', seedSourcePhase3, ...
+    'seedValueRequested', seedPhase3, ...
+    'seedValueApplied', rngInfoPhase3.appliedSeed, ...
+    'rngInfo', rngInfoPhase3);
+
 %% 1. Load test data and build evaluation variants
 fprintf('Loading test set...\n');
 dataPath = P.dataPath;
@@ -85,7 +97,11 @@ end
 %% Save combined results
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ParallelComparisonResults.mat',dateStr));
-save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets');
+metadata.generatedOn = datetime('now');
+metadata.variantCount = numel(testVariants);
+metadata.modelSetCount = numel(modelSets);
+
+save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets','metadata');
 fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
 
 end
@@ -122,6 +138,23 @@ function testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg)
         end
     catch ME
         warning('Failed to compute joint outliers on test set: %s', ME.message);
+    end
+end
+
+function [seedValue, sourceField] = resolve_phase3_seed(cfg)
+
+    seedValue = [];
+    sourceField = '';
+
+    if isfield(cfg,'randomSeedPhase3') && ~isempty(cfg.randomSeedPhase3)
+        seedValue = cfg.randomSeedPhase3;
+        sourceField = 'randomSeedPhase3';
+        return;
+    end
+
+    if isfield(cfg,'randomSeed') && ~isempty(cfg.randomSeed)
+        seedValue = cfg.randomSeed;
+        sourceField = 'randomSeed';
     end
 end
 

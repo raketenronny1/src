@@ -45,6 +45,15 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'parallelOutlierComparison')
         cfg.parallelOutlierComparison = true;
     end
+    if ~isfield(cfg,'randomSeed')
+        cfg.randomSeed = [];
+    end
+    if ~isfield(cfg,'randomSeedPhase2')
+        cfg.randomSeedPhase2 = [];
+    end
+    if ~isfield(cfg,'randomSeedPhase3')
+        cfg.randomSeedPhase3 = [];
+    end
     if ~isfield(cfg,'outlierAlpha')
         cfg.outlierAlpha = 0.01;
     end
