@@ -131,7 +131,10 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
         case 'lda'
             mdl = fitcdiscr(Xfs, y);
         otherwise
-            error('Unsupported classifier: %s', pipelineConfig.classifier);
+            error('train_final_pipeline_model:UnsupportedClassifier', ...
+                  ['Unsupported classifier "%s". Troubleshooting tip: set pipelineConfig.classifier ', ...
+                   'to a supported option (e.g., "lda") or extend train_final_pipeline_model ', ...
+                   'to implement the desired classifier.'], pipelineConfig.classifier);
     end
 
     model.LDAModel = mdl;
