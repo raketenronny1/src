@@ -13,9 +13,14 @@ function run_phase4_feature_interpretation(cfg)
 if nargin < 1
     cfg = struct();
 end
-if ~isfield(cfg, 'projectRoot')
-    cfg.projectRoot = pwd;
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
 end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
 
 P = setup_project_paths(cfg.projectRoot); % Use helper
 dataPath = P.dataPath;
@@ -42,20 +47,32 @@ end
 latestComp = load(fullfile(compFiles(idxSort(1)).folder, compFiles(idxSort(1)).name),'bestModelInfo');
 
 % --- Get Best Pipeline Name and Model File ---
-bestPipelineName = latestComp.bestModelInfo.name;
-latestModelFile = latestComp.bestModelInfo.modelFile;
-log_message('info', '== Best pipeline identified: %s ==', bestPipelineName);
-log_message('info', 'Using final model from: %s', latestModelFile);
+bestInfo = latestComp.bestModelInfo;
+if numel(bestInfo) > 1
+    bestInfo = bestInfo(1);
+end
+bestPipelineName = char(string(bestInfo.modelName));
+latestModelFile = bestInfo.modelFile;
+fprintf('== Best pipeline identified: %s ==\n', bestPipelineName);
+fprintf('Using final model from: %s\n', latestModelFile);
 
 load(latestModelFile,'finalModel');
 finalModelPackage = finalModel;
 
 % Extract necessary components
-finalLDAModel = finalModelPackage.LDAModel;
-selectedWavenumbers = finalModelPackage.selectedWavenumbers;
-selectedFeatureIndices_in_binned = finalModelPackage.selectedFeatureIndices;
+if isa(finalModelPackage,'pipelines.TrainedClassificationPipeline')
+    finalLDAModel = finalModelPackage.getClassifierModel();
+    selectedWavenumbers = finalModelPackage.getSelectedWavenumbers();
+    selectedFeatureIndices_in_binned = finalModelPackage.getSelectedFeatureIndices();
+    binningFactorForPlot = finalModelPackage.Binner.Factor;
+else
+    finalLDAModel = finalModelPackage.LDAModel;
+    selectedWavenumbers = finalModelPackage.selectedWavenumbers;
+    selectedFeatureIndices_in_binned = finalModelPackage.selectedFeatureIndices;
+    binningFactorForPlot = finalModelPackage.binningFactor;
+end
 
-if isempty(selectedWavenumbers) || isempty(finalLDAModel.Coeffs)
+if isempty(selectedWavenumbers) || isempty(finalLDAModel) || isempty(finalLDAModel.Coeffs)
     error('Selected wavenumbers or LDA coefficients not found in the loaded model package.');
 end
 
@@ -112,7 +129,6 @@ y_train_full_for_plot = vertcat(y_train_full_for_plot{:});
 wavenumbers_original = wData.wavenumbers_roi;
 if iscolumn(wavenumbers_original); wavenumbers_original = wavenumbers_original'; end
 
-binningFactorForPlot = finalModelPackage.binningFactor;
 if binningFactorForPlot > 1
     [X_train_binned_for_plot, wavenumbers_binned_for_plot] = bin_spectra(X_train_full_for_plot, wavenumbers_original, binningFactorForPlot);
 else
@@ -141,7 +157,7 @@ hold on;
 plot(plot_wavenumbers_from_table, zeros(size(plot_wavenumbers_from_table)), 'k--');
 hold off;
 
-xlabel(sprintf('Binned Wavenumber (cm^{-1}) - Binning Factor %d', finalModelPackage.binningFactor));
+xlabel(sprintf('Binned Wavenumber (cm^{-1}) - Binning Factor %d', binningFactorForPlot));
 ylabel('LDA Coefficient Value');
 
 % --- DYNAMIC TITLE ---
@@ -189,7 +205,7 @@ if exist('X_train_binned_for_plot', 'var') && ~isempty(X_train_binned_for_plot)
     h_who3 = plot(ax1, wavenumbers_binned_for_plot, mean_spectrum_who3_binned, 'Color', colorWHO3, 'LineWidth', 1.5, 'DisplayName', 'Mittelwert WHO-3');
     legend_handles = [legend_handles, h_who3];
     
-    selectedWnsFromModel = finalModelPackage.selectedWavenumbers;
+    selectedWnsFromModel = selectedWavenumbers;
     ldaCoeffsFromModel = ldaCoefficients; 
 
     for k_idx = 1:length(selectedWnsFromModel)
