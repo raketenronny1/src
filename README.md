@@ -184,3 +184,13 @@ M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC
 
 These routines can be incorporated in custom scripts or the provided pipeline.
 
+## Testing
+
+Run the MATLAB test suite from the repository root to execute the helper function unit tests:
+
+```matlab
+runtests('tests')
+```
+
+The command automatically discovers the test class in `tests/` and exercises the spectral binning and Fisher ratio utilities. The GitHub Actions workflow (`.github/workflows/matlab-tests.yml`) runs the same command on every push and pull request.
+
