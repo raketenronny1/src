@@ -6,16 +6,34 @@ function run_phase3_final_evaluation(cfg)
 % executed with `parallelOutlierComparison`, the script evaluates the
 % resulting model sets separately and reports results for test data with
 % and without joint Hotelling T2 / Q-statistic outliers.
+% Accepts either a configuration struct or a YAML file path.
 
 %% 0. Configuration
-if nargin < 1
-    cfg = struct();
+if nargin < 1 || isempty(cfg)
+    cfg = configure_cfg();
+elseif ischar(cfg) || (isstring(cfg) && isscalar(cfg))
+    cfg = configure_cfg('configFile', char(cfg));
+elseif ~isstruct(cfg)
+    error('run_phase3_final_evaluation:InvalidConfig', ...
+        'Configuration input must be empty, a struct or a file path.');
 end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
-if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
-if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
 
-P = setup_project_paths(cfg.projectRoot,'Phase3');
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
+
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase3Config = runConfig.phase3;
+metricNamesEval = phase3Config.metrics;
+probeMetricNames = phase3Config.probeMetrics;
+positiveClassLabel = runConfig.classLabels.positive;
+negativeClassLabel = runConfig.classLabels.negative;
+
+P = setup_project_paths(cfg.projectRoot,'Phase3',cfg);
 resultsPath = P.resultsPath;
 figuresPath = P.figuresPath;
 modelsPathP2 = fullfile(cfg.projectRoot,'models','Phase2');
@@ -23,28 +41,18 @@ resultsPathP2 = fullfile(cfg.projectRoot,'results','Phase2');
 if ~isfolder(resultsPath); mkdir(resultsPath); end
 if ~isfolder(figuresPath); mkdir(figuresPath); end
 
-% Configure random seed for reproducibility
-phaseLogger = [];
-if isfield(cfg,'logger'); phaseLogger = cfg.logger; end
-[seedPhase3, seedSourcePhase3] = resolve_phase3_seed(cfg);
-rngInfoPhase3 = set_random_seed(seedPhase3, 'Logger', phaseLogger, ...
-    'Context', 'Phase 3 final evaluation');
-metadata = struct('phase','Phase3', ...
-    'seedSource', seedSourcePhase3, ...
-    'seedValueRequested', seedPhase3, ...
-    'seedValueApplied', rngInfoPhase3.appliedSeed, ...
-    'rngInfo', rngInfoPhase3);
+logger = setup_logging(cfg, 'Phase3_FinalEvaluation');
+loggerCleanup = onCleanup(@()logger.closeFcn()); %#ok<NASGU>
+log_message('info', 'PHASE 3: Final Evaluation - %s', string(datetime('now')));
 
 %% 1. Load test data and build evaluation variants
-fprintf('Loading test set...\n');
+log_message('info', 'Loading test set...');
 dataPath = P.dataPath;
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-wavenumbers = wavenumbers_roi;
-
-T = load(fullfile(dataPath,'data_table_test.mat'),'dataTableTest');
-dataTableTest = T.dataTableTest;
-[X_test, y_test, ~, probeIDs_test] = flatten_spectra_for_pca( ...
-    dataTableTest, length(wavenumbers));
+testData = load_dataset_split(dataPath, 'test');
+wavenumbers = testData.wavenumbers;
+X_test = testData.X;
+y_test = testData.y;
+probeIDs_test = testData.probeIDs;
 
 testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg);
 
@@ -55,20 +63,22 @@ if isempty(modelSets)
 end
 
 %% 3. Evaluate models across variants
-metricNamesEval = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1','PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
 resultsByVariant = struct('id',{},'description',{},'modelSets',{});
 bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{},'modelFile',{});
 
+variantReporter = ProgressReporter('Phase 3 variants', numel(testVariants), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
+
 for v = 1:numel(testVariants)
     variant = testVariants(v);
-    fprintf('\nEvaluating test variant: %s\n', variant.description);
+    log_message('info', 'Evaluating test variant: %s', variant.description);
     variantResults = struct('modelSetID',{},'modelSetDescription',{},'models',{});
     bestScore = -Inf; bestEntry = struct();
+    modelSetReporter = ProgressReporter(sprintf('Model sets - %s', variant.id), numel(modelSets), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
 
     for s = 1:numel(modelSets)
         modelSet = modelSets(s);
         fprintf('  Model set: %s\n', modelSet.description);
-        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath);
+        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames);
         variantResults(end+1).modelSetID = modelSet.id; %#ok<AGROW>
         variantResults(end).modelSetDescription = modelSet.description;
         variantResults(end).models = models;
@@ -84,6 +94,7 @@ for v = 1:numel(testVariants)
                 bestEntry.modelFile = models(mIdx).modelFile;
             end
         end
+        modelSetReporter.update(1, sprintf('%s complete', modelSet.id));
     end
 
     resultsByVariant(v).id = variant.id; %#ok<AGROW>
@@ -92,17 +103,17 @@ for v = 1:numel(testVariants)
     if ~isempty(fieldnames(bestEntry))
         bestModelInfo(v) = bestEntry; %#ok<AGROW>
     end
+    variantReporter.update(1, sprintf('%s complete', variant.id));
+    if cfg.verbose
+        fprintf('Completed evaluations for variant %s.\n', variant.id);
+    end
 end
 
 %% Save combined results
 dateStr = string(datetime('now','Format','yyyyMMdd'));
 resultsFile = fullfile(resultsPath,sprintf('%s_Phase3_ParallelComparisonResults.mat',dateStr));
-metadata.generatedOn = datetime('now');
-metadata.variantCount = numel(testVariants);
-metadata.modelSetCount = numel(modelSets);
-
-save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets','metadata');
-fprintf('Saved Phase 3 comparison results to %s\n',resultsFile);
+save(resultsFile,'resultsByVariant','bestModelInfo','testVariants','modelSets');
+log_message('info', 'Saved Phase 3 comparison results to %s', resultsFile);
 
 end
 
@@ -133,11 +144,11 @@ function testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg)
             filteredVariant.mask = keepMask;
             filteredVariant.outlierInfo = outlierStruct;
             testVariants(end+1) = filteredVariant; %#ok<AGROW>
-            fprintf('Joint T2/Q filtering removed %d/%d test spectra.\n', ...
+            log_message('info', 'Joint T2/Q filtering removed %d/%d test spectra.', ...
                 outlierStruct.numJointOutliers, numel(keepMask));
         end
     catch ME
-        warning('Failed to compute joint outliers on test set: %s', ME.message);
+        log_message('warning', 'Failed to compute joint outliers on test set: %s', ME.message);
     end
 end
 
@@ -231,7 +242,7 @@ function cvInfo = load_cv_results(resultsDir)
     if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
 end
 
-function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath)
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames)
 
     models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
     X = variant.X;
@@ -240,32 +251,52 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
 
     pipeline_names_from_cv = {};
     if ~isempty(modelSet.pipelines)
-        pipeline_names_from_cv = cellfun(@(p) p.name, modelSet.pipelines, 'UniformOutput', false);
+        pipeline_names_from_cv = cellfun(@extract_pipeline_name, modelSet.pipelines, 'UniformOutput', false);
     end
+
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
+
+    modelReporter = ProgressReporter(sprintf('Models - %s | %s', modelSet.id, variant.id), numel(modelSet.modelFiles), 'Verbose', verbose, 'ThrottleSeconds', 0);
 
     for i=1:numel(modelSet.modelFiles)
         mf = fullfile(modelSet.modelFiles(i).folder,modelSet.modelFiles(i).name);
         S = load(mf,'finalModel','aggHyper','selectedIdx','selectedWn','ds'); %#ok<NASGU>
         if ~isfield(S,'finalModel')
-            warning('Model file %s missing finalModel. Skipping.', mf);
+            log_message('warning', 'Model file %s missing finalModel. Skipping.', mf);
             continue;
         end
         finalModel = S.finalModel;
-        mdlName = finalModel.featureSelectionMethod;
-        if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
+        if isa(finalModel,'pipelines.TrainedClassificationPipeline')
+            mdlName = char(finalModel.Name);
+        elseif isfield(finalModel,'pipelineName')
+            mdlName = finalModel.pipelineName;
+        elseif isfield(finalModel,'featureSelectionMethod')
+            mdlName = finalModel.featureSelectionMethod;
+        else
+            mdlName = sprintf('Model_%d', i);
+        end
+        mdlName = char(mdlName);
 
         [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
-        posIdx = find(finalModel.LDAModel.ClassNames==3);
-        metrics = calculate_performance_metrics(y,ypred,score(:,posIdx),3,metricNamesEval);
+        [metrics, posScores] = evaluate_pipeline_metrics(y, ypred, score, finalModel.LDAModel.ClassNames, metricNamesEval);
+        if isempty(posScores) && ~isempty(score)
+            posIdx = find(finalModel.LDAModel.ClassNames==3, 1, 'first');
+            if ~isempty(posIdx)
+                posScores = score(:, posIdx);
+            end
+        end
 
         entry = struct();
         entry.name = mdlName;
         entry.metrics = metrics;
         entry.modelFile = mf;
-        entry.scores = score(:,posIdx);
+        entry.scores = posScores;
         entry.predicted = ypred;
 
-        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,score(:,posIdx),ypred,metricNamesEval);
+        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,posScores,ypred,metricNamesEval);
         entry.probeTable = probeTable;
         entry.probeMetrics = probeMetrics;
 
@@ -278,7 +309,11 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         end
 
         % ROC curve file per variant/model set combination
-        [Xroc,Yroc,~,AUC] = perfcurve(y,score(:,posIdx),3);
+        if isempty(posScores)
+            Xroc = [0 1]; Yroc = [0 1]; AUC = NaN;
+        else
+            [Xroc,Yroc,~,AUC] = perfcurve(y,posScores,3);
+        end
         rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s_%s.png', entry.name, modelSet.id, variant.id));
         fig = figure('Visible','off');
         plot(Xroc,Yroc,'LineWidth',1.5); grid on;
@@ -288,10 +323,14 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         entry.rocFile = rocFile;
 
         models(end+1) = entry; %#ok<AGROW>
+        modelReporter.update(1, sprintf('%s complete', entry.name));
     end
 end
 
-function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames)
+function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames,positiveClassLabel,negativeClassLabel,probeMetricNames)
+    if nargin < 8 || isempty(probeMetricNames)
+        probeMetricNames = metricNames;
+    end
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison
     probes = unique(probeIDs,'stable');
@@ -303,9 +342,13 @@ function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,met
     for i=1:numel(probes)
         idx = strcmp(probeIDs,probes(i));
         tbl.TrueLabel(i) = mode(yTrue(idx));
-        tbl.MeanProbWHO3(i) = mean(scores(idx));
+        if isempty(scores)
+            tbl.MeanProbWHO3(i) = NaN;
+        else
+            tbl.MeanProbWHO3(i) = mean(scores(idx));
+        end
         tbl.PredLabel(i) = tbl.MeanProbWHO3(i)>0.5; % 0=>WHO1, 1=>WHO3
         tbl.PredLabel(i) = tbl.PredLabel(i).*2+1; % convert 0->1,1->3
     end
-    metrics = calculate_performance_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,3,metricNames);
+    metrics = evaluate_pipeline_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,[],metricNames);
 end

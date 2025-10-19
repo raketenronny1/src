@@ -2,6 +2,27 @@
 
 This repository contains MATLAB code for analysing Fourier-transform infrared (FT-IR) spectra of meningioma tissue in order to discriminate tumour grades. The code is organised into a series of phases that perform preprocessing, model selection, final evaluation and interpretation.
 
+## Workflow Overview
+
+```mermaid
+flowchart LR
+    A[Import & Preprocessing<br>(`import_preprocessing/`)] --> B[Phase 2<br>Model Selection]
+    B --> C[Phase 3<br>Final Evaluation]
+    C --> D[Phase 4<br>Feature Interpretation]
+    D --> E[Visualization & Reporting<br>(`plotting/` & exports)]
+    E --> F[Insights for Clinical Review]
+    B --> G[data_management/
+        Exports]
+    A --> H[data/
+        models/
+        results/]
+    H -. provides inputs .-> B
+    H -. provides inputs .-> C
+    H -. provides inputs .-> D
+```
+
+GitHub renders Mermaid diagrams automatically in Markdown previews and on repository pages. To verify the rendering, push the changes and open the README on GitHub.com—use the **Preview** tab in pull requests or the repository view to ensure the diagram displays correctly. If the diagram does not render (for example, in Markdown viewers without Mermaid support), copy the code block above into the [Mermaid Live Editor](https://mermaid.live/) or use a compatible Markdown renderer to view the workflow.
+
 ## Directory layout
 
 - `import_preprocessing/` – scripts for data preparation and preprocessing.
@@ -9,6 +30,7 @@ This repository contains MATLAB code for analysing Fourier-transform infrared (F
 - `helper_functions/` – refactored functions used throughout the pipeline.
 - `plotting/` – scripts for generating project figures.
 - `archive/` – older scripts retained for reference.
+- `config/` – YAML configuration files (default and environment-specific).
 
 - Top-level scripts such as `run_phase2_model_selection.m`, `run_phase3_final_evaluation.m` and `run_phase4_feature_interpretation.m` implement the main phases of the analysis.
 
@@ -41,16 +63,47 @@ This repository includes a lightweight spider plot helper function for generatin
 
 ## Configuration helper
 
-Use the `configure_cfg.m` function to create or update the `cfg` structure that
-controls the main scripts. It fills in sensible defaults for missing fields and
-accepts name/value pairs for overrides.
+Configuration lives under `config/`. The project ships with
+`config/default.yaml` and optional environment-specific overrides (for example
+`config/development.yaml`). Use the `configure_cfg.m` function to load these
+files and populate the `cfg` structure that controls the main scripts. It fills
+in sensible defaults for missing fields and accepts name/value pairs for
+overrides.
 
 ```matlab
+addpath('src');
 cfg = configure_cfg();
 cfg.useOutlierRemoval = true;   % set false to keep all training data
 cfg.parallelOutlierComparison = true; % evaluate both cleaned and full datasets in parallel
+cfg.verbose = true;             % set false to suppress progress output
 run('src/main.m')
 ```
+
+### Project configuration file
+
+Cross-cutting defaults such as class labels, metric lists and cross-validation
+fold counts are stored in `config/project_config.json`. The configuration loader
+(`load_run_configuration`) reads this file for every phase and merges it with
+internal defaults as well as any overrides supplied via the `cfg` struct.
+
+Key sections in the JSON file:
+
+- `classLabels.positive` / `classLabels.negative` – define which label should
+  be treated as the positive (e.g. WHO‑3) and negative class. These values are
+  passed into the metric calculations and probe-level summaries.
+- `metricPresets` – named collections of metric identifiers that can be reused
+  across phases. The supplied presets (`phase2_model_selection`,
+  `phase3_final_evaluation`, `probe_level_summary`) mirror the default
+  eight-metric bundle.
+- `phase2.outerFolds` / `phase2.innerFolds` – nested cross-validation fold
+  counts used during model selection.
+- `phase2.metricsPreset`, `phase3.metricsPreset`,
+  `phase3.probeMetricsPreset` – select which metric preset each phase should
+  track when reporting performance.
+
+You can override these defaults either by editing the JSON file or by passing
+fields such as `cfg.phase2OuterFolds`, `cfg.phase3MetricsPreset`, or
+`cfg.positiveClassLabel` when calling the phase scripts.
 
 ## Analysis pipeline
 
@@ -73,7 +126,7 @@ Run nested cross-validation using:
 The Fisher ratio and MRMR pipelines now select a percentage of the available features rather than a fixed count.
 
 ```matlab
-run('src/run_phase2_model_selection.m')
+run_phase2_model_selection();
 ```
 
 Set `cfg.parallelOutlierComparison = true` before running the phase to train
@@ -84,23 +137,32 @@ compare their test-set performance side by side.
 
 Results are saved under `results/Phase2` and models under `models/Phase2`.
 
+Long-running stages such as the outer and inner cross-validation loops now
+emit live progress updates. The reporter keeps the console tidy in interactive
+MATLAB sessions and can be disabled altogether by setting `cfg.verbose = false`.
+
 ### Phase 3 – Final evaluation
 
 Train the MRMR–LDA pipeline on the full training set and evaluate on the test set.
 MRMR features are chosen based on a percentage of the binned spectrum rather than a fixed count.
 
 ```matlab
-run('src/run_phase3_final_evaluation.m')
+run_phase3_final_evaluation();
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
+
+Phase 3 reuses the console reporter to track variant, model-set and individual
+model evaluations. In non-interactive environments (for example CI servers) the
+output automatically switches to newline-based updates so that logs remain
+readable.
 
 ### Phase 4 – Feature interpretation
 
 Interpret the trained model by plotting LDA coefficients for the selected wavenumbers and generating mean spectra visualisations. Statistical p-value calculations were removed to streamline the phase.
 
 ```matlab
-run('src/run_phase4_feature_interpretation.m')
+run_phase4_feature_interpretation();
 ```
 
 Outputs appear in `results/Phase4` and `figures/Phase4`.
@@ -179,8 +241,18 @@ Reusable helper functions in `helper_functions/` include:
 [specB, wnB] = bin_spectra(rawSpec, wn, 5);           % Spectral binning
 FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
 M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
-[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
+[bestParams, perf, diag] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
+
+## Testing
+
+Run the MATLAB test suite from the repository root to execute the helper function unit tests:
+
+```matlab
+runtests('tests')
+```
+
+The command automatically discovers the test class in `tests/` and exercises the spectral binning and Fisher ratio utilities. The GitHub Actions workflow (`.github/workflows/matlab-tests.yml`) runs the same command on every push and pull request.
 
