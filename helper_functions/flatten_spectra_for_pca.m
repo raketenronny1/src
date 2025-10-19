@@ -23,6 +23,19 @@
 %   originalSpectrumIndexInProbe_flat- Index of the spectrum within its
 %                                      original probe.
 %
+% EXAMPLE:
+%   % Assemble a miniature table of spectra resembling the demo notebooks.
+%   spectraProbeA = [1 2 3; 4 5 6];
+%   spectraProbeB = [7 8 9];
+%   demoTable = table({spectraProbeA; spectraProbeB}, ...
+%                     categorical({"WHO-1"; "WHO-3"}), ...
+%                     ["Patient-A"; "Patient-B"], ...
+%                     'VariableNames', {'CombinedSpectra','WHO_Grade','Diss_ID'});
+%
+%   [X_flat, y_numeric_flat, y_cat_flat] = flatten_spectra_for_pca(demoTable, 3);
+%   % X_flat now contains three spectra stacked vertically and the outputs
+%   % expose matching numeric/label metadata ready for PCA workflows.
+%
 % Date: 2025-05-18
 
 function [X_flat, y_numeric_flat, y_cat_flat, patientID_flat, ...

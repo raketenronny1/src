@@ -15,6 +15,17 @@
 %   spectra_binned    - (N_spectra x N_features_binned) matrix of binned spectra.
 %   wavenumbers_binned- (1 x N_features_binned) vector of new mean wavenumbers for bins.
 %
+% EXAMPLE:
+%   % Generate reproducible synthetic spectra with 3 observations and 9 wavenumbers.
+%   wavenumbers = 1000:20:1160;
+%   spectra = reshape(1:27, 3, []);
+%
+%   % Bin every 3 adjacent features to smooth the spectra.
+%   [spectra_binned, wavenumbers_binned] = bin_spectra(spectra, wavenumbers, 3);
+%
+%   % The binned output now has size 3x3 with averaged intensities per bin,
+%   % providing a quick smoke-test scenario that can be reused in unit tests.
+%
 % Date: 2025-05-15
 
 

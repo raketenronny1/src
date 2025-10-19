@@ -19,6 +19,14 @@
 %       flag_T2, flag_Q, is_T2_only, is_Q_only,
 %       is_outlier, is_normal
 %
+% EXAMPLE:
+%   % Model a compact synthetic dataset to inspect PCA diagnostics.
+%   X = reshape(1:30, 10, 3);
+%   results = compute_pca_t2_q(X, 0.05, 0.9);
+%
+%   % The returned struct contains Hotelling T^2 / Q-statistic thresholds
+%   % that match the validation routines for PCA-based outlier detection.
+%
 % Date: 2025-05-18
 
 function results = compute_pca_t2_q(X, alpha, varianceToModel)
