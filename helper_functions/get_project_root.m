@@ -47,9 +47,21 @@ function root = locate_repo_root(startDir)
 
     currentDir = startDir;
     while true
-        if isfolder(fullfile(currentDir, '.git')) || ...
-                (isfolder(fullfile(currentDir, 'src')) && ...
-                 (isfolder(fullfile(currentDir, 'results')) || isfile(fullfile(currentDir, 'README.md'))))
+        % Check if this is the repository root
+        % The root should have a .git folder, OR it should have both:
+        % - a 'src' subdirectory AND
+        % - either a 'results' directory or 'README.md' file
+        hasGit = isfolder(fullfile(currentDir, '.git'));
+        hasSrc = isfolder(fullfile(currentDir, 'src'));
+        hasResults = isfolder(fullfile(currentDir, 'results'));
+        hasReadme = isfile(fullfile(currentDir, 'README.md'));
+        
+        % IMPORTANT: Make sure we're not IN the src directory itself
+        % by checking if the parent directory exists and has what we need
+        [~, dirName] = fileparts(currentDir);
+        isInSrcDir = strcmp(dirName, 'src');
+        
+        if hasGit || (hasSrc && (hasResults || hasReadme) && ~isInSrcDir)
             root = currentDir;
             return;
         end
