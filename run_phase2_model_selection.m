@@ -63,6 +63,8 @@ else
     datasetsToProcess = datasetVariants(variantIdx);
 end
 
+datasetReporter = ProgressReporter('Phase 2 datasets', numel(datasetsToProcess), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
+
 %% Define pipelines
 pipelines = define_pipelines();
 
@@ -83,7 +85,7 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath);
+        numInnerFolds, resultsPath, modelsPath, 'Verbose', cfg.verbose);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -178,7 +180,12 @@ function pipelinesOut = define_pipelines()
     pipelinesOut = pipelineList;
 end
 
-function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
+function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath, varargin)
+
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -190,6 +197,8 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
     outerCV = cvpartition(length(uniqueProbes),'KFold',numOuterFolds);
     resultsPerPipeline=cell(numel(pipelines),1);
     savedModels = cell(numel(pipelines),1);
+
+    pipelineReporter = ProgressReporter(sprintf('Pipelines - %s', ds.id), numel(pipelines), 'Verbose', verbose, 'ThrottleSeconds', 0);
 
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
@@ -274,5 +283,6 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
         resultsPerPipeline{iPipe}=res;
         savedModels{iPipe}=modelFile;
+        pipelineReporter.update(1, sprintf('%s complete', pipe.name));
     end
 end

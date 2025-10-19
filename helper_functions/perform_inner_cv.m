@@ -78,10 +78,10 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
         priorityMetricName = metricNames{1};
     end
     
-    bestInnerPerfScore = -Inf; 
+    bestInnerPerfScore = -Inf;
     bestHyperparams = struct();
-    bestOverallPerfMetrics = struct(); 
-    for iMet = 1:length(metricNames) 
+    bestOverallPerfMetrics = struct();
+    for iMet = 1:length(metricNames)
         bestOverallPerfMetrics.(metricNames{iMet}) = NaN;
     end
 
@@ -108,6 +108,9 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
         diagnostics = record_diagnostic(diagnostics, entry, [], 'error');
         return;
     end
+
+    totalInnerSteps = max(1, numel(hyperparamCombinations) * actualNumInnerFolds);
+    innerReporter = ProgressReporter(progressLabel, totalInnerSteps, 'Verbose', verbose, 'ThrottleSeconds', 0);
 
     probe_WHO_Grade_inner = zeros(length(uniqueProbesInner), 1);
     [~, ~, groupIdxPerSpectrum_inner] = unique(probeIDs_inner_train_full, 'stable'); 
@@ -146,11 +149,14 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
         end
     end
 
-    for iCombo = 1:length(hyperparamCombinations)
+    numCombos = length(hyperparamCombinations);
+    for iCombo = 1:numCombos
         currentHyperparams = hyperparamCombinations{iCombo};
         tempFoldMetricsArr = NaN(actualNumInnerFolds, length(metricNames));
 
         for kInner = 1:actualNumInnerFolds
+            stepMsg = sprintf('Combo %d/%d, fold %d/%d', iCombo, numCombos, kInner, actualNumInnerFolds);
+            updatedThisIteration = false;
             isInnerTrainProbe_idx = training(innerCV_probeLevel, kInner);
             isInnerValProbe_idx   = test(innerCV_probeLevel, kInner);
 
@@ -166,7 +172,9 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
             y_val_fold   = y_inner_train_full(idxInnerVal_Spectra);
             
             if isempty(X_train_fold) || isempty(X_val_fold) || length(unique(y_train_fold))<2
-                tempFoldMetricsArr(kInner, :) = NaN; 
+                tempFoldMetricsArr(kInner, :) = NaN;
+                innerReporter.update(1, stepMsg + " - skipped");
+                updatedThisIteration = true;
                 continue;
             end
 
@@ -315,7 +323,12 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
             else
                 tempFoldMetricsArr(kInner, :) = NaN;
             end
-        end 
+
+            if ~updatedThisIteration
+                innerReporter.update(1, stepMsg);
+                updatedThisIteration = true;
+            end
+        end
         
         meanPerfThisCombo = nanmean(tempFoldMetricsArr, 1);
         
