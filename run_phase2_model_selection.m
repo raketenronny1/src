@@ -8,6 +8,7 @@ function run_phase2_model_selection(cfg)
 fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
+if ~isfield(cfg,'verbose'); cfg.verbose = true; end
 
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
@@ -51,6 +52,8 @@ else
     datasetsToProcess = datasetVariants(variantIdx);
 end
 
+datasetReporter = ProgressReporter('Phase 2 datasets', numel(datasetsToProcess), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
+
 %% Define pipelines
 pipelines = define_pipelines();
 metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
@@ -74,7 +77,7 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath);
+        numInnerFolds, resultsPath, modelsPath, 'Verbose', cfg.verbose);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -87,6 +90,7 @@ for d = 1:numel(datasetsToProcess)
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
         'numOuterFolds','numInnerFolds','savedModels','ds');
     fprintf('Results for %s saved to %s\n', ds.id, resultsFile);
+    datasetReporter.update(1, sprintf('%s complete', ds.id));
 end
 end
 
@@ -151,7 +155,12 @@ function pipelines = define_pipelines()
     pidx=pidx+1; pipelines{pidx}=p;
 end
 
-function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
+function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath, varargin)
+
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -164,11 +173,14 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
     resultsPerPipeline=cell(numel(pipelines),1);
     savedModels = cell(numel(pipelines),1);
 
+    pipelineReporter = ProgressReporter(sprintf('Pipelines - %s', ds.id), numel(pipelines), 'Verbose', verbose, 'ThrottleSeconds', 0);
+
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
         fprintf('\nEvaluating pipeline: %s\n', pipe.name);
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
+        outerReporter = ProgressReporter(sprintf('Outer CV - %s (%s)', pipe.name, ds.id), numOuterFolds, 'Verbose', verbose, 'ThrottleSeconds', 0);
         for k=1:numOuterFolds
             trainIdx = training(outerCV,k);
             testIdx  = test(outerCV,k);
@@ -176,13 +188,17 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            innerLabel = sprintf('Inner CV - %s (outer fold %d/%d, %s)', ...
+                pipe.name, k, numOuterFolds, ds.id);
+            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames, ...
+                'Verbose', verbose, 'Label', innerLabel);
             outerBestHyper{k}=bestHyper;
             [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
             [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
             posIdx=find(finalModel.LDAModel.ClassNames==3);
             m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
             outerMetrics(k,:)=cell2mat(struct2cell(m))';
+            outerReporter.update(1, sprintf('Fold %d/%d complete', k, numOuterFolds));
         end
         res=struct();
         res.pipelineConfig=pipe;
@@ -198,5 +214,6 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
         resultsPerPipeline{iPipe}=res;
         savedModels{iPipe}=modelFile;
+        pipelineReporter.update(1, sprintf('%s complete', pipe.name));
     end
 end

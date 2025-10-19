@@ -5,7 +5,14 @@
 
 function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
-    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
+    pipelineConfig, wavenumbers_original, numInnerFolds, metricNames, varargin)
+
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    addParameter(p, 'Label', 'Inner CV', @(s) isstring(s) || ischar(s));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
+    progressLabel = string(p.Results.Label);
 
     paramGridCells = {}; 
     paramNames = {};     
@@ -75,10 +82,10 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         priorityMetricName = metricNames{1};
     end
     
-    bestInnerPerfScore = -Inf; 
+    bestInnerPerfScore = -Inf;
     bestHyperparams = struct();
-    bestOverallPerfMetrics = struct(); 
-    for iMet = 1:length(metricNames) 
+    bestOverallPerfMetrics = struct();
+    for iMet = 1:length(metricNames)
         bestOverallPerfMetrics.(metricNames{iMet}) = NaN;
     end
 
@@ -92,9 +99,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     
     if isempty(X_inner_train_full) || length(unique(y_inner_train_full)) < 2 || actualNumInnerFolds < 2
         if ~isempty(hyperparamCombinations)
-            bestHyperparams = hyperparamCombinations{1}; 
-        else 
-            bestHyperparams = struct('binningFactor',1); 
+            bestHyperparams = hyperparamCombinations{1};
+        else
+            bestHyperparams = struct('binningFactor',1);
             if isfield(pipelineConfig,'binningFactors') && ~isempty(pipelineConfig.binningFactors)
                  bestHyperparams.binningFactor = pipelineConfig.binningFactors(1);
             end
@@ -102,6 +109,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         for iMet = 1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
         return;
     end
+
+    totalInnerSteps = max(1, numel(hyperparamCombinations) * actualNumInnerFolds);
+    innerReporter = ProgressReporter(progressLabel, totalInnerSteps, 'Verbose', verbose, 'ThrottleSeconds', 0);
 
     probe_WHO_Grade_inner = zeros(length(uniqueProbesInner), 1);
     [~, ~, groupIdxPerSpectrum_inner] = unique(probeIDs_inner_train_full, 'stable'); 
@@ -131,11 +141,14 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         end
     end
 
-    for iCombo = 1:length(hyperparamCombinations)
+    numCombos = length(hyperparamCombinations);
+    for iCombo = 1:numCombos
         currentHyperparams = hyperparamCombinations{iCombo};
         tempFoldMetricsArr = NaN(actualNumInnerFolds, length(metricNames));
 
         for kInner = 1:actualNumInnerFolds
+            stepMsg = sprintf('Combo %d/%d, fold %d/%d', iCombo, numCombos, kInner, actualNumInnerFolds);
+            updatedThisIteration = false;
             isInnerTrainProbe_idx = training(innerCV_probeLevel, kInner);
             isInnerValProbe_idx   = test(innerCV_probeLevel, kInner);
 
@@ -151,7 +164,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             y_val_fold   = y_inner_train_full(idxInnerVal_Spectra);
             
             if isempty(X_train_fold) || isempty(X_val_fold) || length(unique(y_train_fold))<2
-                tempFoldMetricsArr(kInner, :) = NaN; 
+                tempFoldMetricsArr(kInner, :) = NaN;
+                innerReporter.update(1, stepMsg + " - skipped");
+                updatedThisIteration = true;
                 continue;
             end
 
@@ -236,10 +251,13 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                     end
             end
             
-            if isempty(selectedFcIdx_in_current_w) && size(X_train_p, 2) > 0 
-                selectedFcIdx_in_current_w = 1:size(X_train_p, 2); 
-            elseif isempty(X_train_p) || size(X_train_p,2) == 0 
-                tempFoldMetricsArr(kInner, :) = NaN; continue;
+            if isempty(selectedFcIdx_in_current_w) && size(X_train_p, 2) > 0
+                selectedFcIdx_in_current_w = 1:size(X_train_p, 2);
+            elseif isempty(X_train_p) || size(X_train_p,2) == 0
+                tempFoldMetricsArr(kInner, :) = NaN;
+                innerReporter.update(1, stepMsg + " - no features");
+                updatedThisIteration = true;
+                continue;
             end
 
             X_fs_train_fold = X_train_p(:, selectedFcIdx_in_current_w);
@@ -247,18 +265,27 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             classifier_inner = [];
             if isempty(X_fs_train_fold) || size(X_fs_train_fold,1)<2 || length(unique(y_train_fold))<2
-                tempFoldMetricsArr(kInner, :) = NaN; continue;
+                tempFoldMetricsArr(kInner, :) = NaN;
+                innerReporter.update(1, stepMsg + " - insufficient training");
+                updatedThisIteration = true;
+                continue;
             end
 
             switch lower(pipelineConfig.classifier)
                 case 'lda'
-                    if size(X_fs_train_fold, 2) == 1 && var(X_fs_train_fold) < 1e-9 
-                        tempFoldMetricsArr(kInner, :) = NaN; continue;
+                    if size(X_fs_train_fold, 2) == 1 && var(X_fs_train_fold) < 1e-9
+                        tempFoldMetricsArr(kInner, :) = NaN;
+                        innerReporter.update(1, stepMsg + " - constant feature");
+                        updatedThisIteration = true;
+                        continue;
                     end
                     try
                         classifier_inner = fitcdiscr(X_fs_train_fold, y_train_fold);
                     catch ME_lda_inner
-                        tempFoldMetricsArr(kInner, :) = NaN; continue;
+                        tempFoldMetricsArr(kInner, :) = NaN;
+                        innerReporter.update(1, stepMsg + " - LDA failed");
+                        updatedThisIteration = true;
+                        continue;
                     end
             end
 
@@ -292,7 +319,12 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             else
                 tempFoldMetricsArr(kInner, :) = NaN;
             end
-        end 
+
+            if ~updatedThisIteration
+                innerReporter.update(1, stepMsg);
+                updatedThisIteration = true;
+            end
+        end
         
         meanPerfThisCombo = nanmean(tempFoldMetricsArr, 1);
         

@@ -51,5 +51,8 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'outlierVarianceToModel')
         cfg.outlierVarianceToModel = 0.95;
     end
+    if ~isfield(cfg,'verbose')
+        cfg.verbose = true;
+    end
 end
 

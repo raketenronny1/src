@@ -14,6 +14,7 @@ end
 if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
 if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
 if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
+if ~isfield(cfg,'verbose'); cfg.verbose = true; end
 
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
@@ -47,16 +48,19 @@ metricNamesEval = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1','PPV_WHO3','
 resultsByVariant = struct('id',{},'description',{},'modelSets',{});
 bestModelInfo = struct('variantID',{},'modelSetID',{},'modelName',{},'metrics',{},'modelFile',{});
 
+variantReporter = ProgressReporter('Phase 3 variants', numel(testVariants), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
+
 for v = 1:numel(testVariants)
     variant = testVariants(v);
     fprintf('\nEvaluating test variant: %s\n', variant.description);
     variantResults = struct('modelSetID',{},'modelSetDescription',{},'models',{});
     bestScore = -Inf; bestEntry = struct();
+    modelSetReporter = ProgressReporter(sprintf('Model sets - %s', variant.id), numel(modelSets), 'Verbose', cfg.verbose, 'ThrottleSeconds', 0);
 
     for s = 1:numel(modelSets)
         modelSet = modelSets(s);
         fprintf('  Model set: %s\n', modelSet.description);
-        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath);
+        models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, 'Verbose', cfg.verbose);
         variantResults(end+1).modelSetID = modelSet.id; %#ok<AGROW>
         variantResults(end).modelSetDescription = modelSet.description;
         variantResults(end).models = models;
@@ -72,6 +76,7 @@ for v = 1:numel(testVariants)
                 bestEntry.modelFile = models(mIdx).modelFile;
             end
         end
+        modelSetReporter.update(1, sprintf('%s complete', modelSet.id));
     end
 
     resultsByVariant(v).id = variant.id; %#ok<AGROW>
@@ -79,6 +84,10 @@ for v = 1:numel(testVariants)
     resultsByVariant(v).modelSets = variantResults;
     if ~isempty(fieldnames(bestEntry))
         bestModelInfo(v) = bestEntry; %#ok<AGROW>
+    end
+    variantReporter.update(1, sprintf('%s complete', variant.id));
+    if cfg.verbose
+        fprintf('Completed evaluations for variant %s.\n', variant.id);
     end
 end
 
@@ -198,7 +207,7 @@ function cvInfo = load_cv_results(resultsDir)
     if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
 end
 
-function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath)
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, varargin)
 
     models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
     X = variant.X;
@@ -210,11 +219,19 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         pipeline_names_from_cv = cellfun(@(p) p.name, modelSet.pipelines, 'UniformOutput', false);
     end
 
+    p = inputParser();
+    addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    parse(p, varargin{:});
+    verbose = logical(p.Results.Verbose);
+
+    modelReporter = ProgressReporter(sprintf('Models - %s | %s', modelSet.id, variant.id), numel(modelSet.modelFiles), 'Verbose', verbose, 'ThrottleSeconds', 0);
+
     for i=1:numel(modelSet.modelFiles)
         mf = fullfile(modelSet.modelFiles(i).folder,modelSet.modelFiles(i).name);
         S = load(mf,'finalModel','aggHyper','selectedIdx','selectedWn','ds'); %#ok<NASGU>
         if ~isfield(S,'finalModel')
             warning('Model file %s missing finalModel. Skipping.', mf);
+            modelReporter.update(1, sprintf('%s missing finalModel', modelSet.modelFiles(i).name));
             continue;
         end
         finalModel = S.finalModel;
@@ -255,6 +272,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         entry.rocFile = rocFile;
 
         models(end+1) = entry; %#ok<AGROW>
+        modelReporter.update(1, sprintf('%s complete', entry.name));
     end
 end
 

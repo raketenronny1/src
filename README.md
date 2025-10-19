@@ -49,6 +49,7 @@ accepts name/value pairs for overrides.
 cfg = configure_cfg();
 cfg.useOutlierRemoval = true;   % set false to keep all training data
 cfg.parallelOutlierComparison = true; % evaluate both cleaned and full datasets in parallel
+cfg.verbose = true;             % set false to suppress progress output
 run('src/main.m')
 ```
 
@@ -84,6 +85,10 @@ compare their test-set performance side by side.
 
 Results are saved under `results/Phase2` and models under `models/Phase2`.
 
+Long-running stages such as the outer and inner cross-validation loops now
+emit live progress updates. The reporter keeps the console tidy in interactive
+MATLAB sessions and can be disabled altogether by setting `cfg.verbose = false`.
+
 ### Phase 3 – Final evaluation
 
 Train the MRMR–LDA pipeline on the full training set and evaluate on the test set.
@@ -94,6 +99,11 @@ run('src/run_phase3_final_evaluation.m')
 ```
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
+
+Phase 3 reuses the console reporter to track variant, model-set and individual
+model evaluations. In non-interactive environments (for example CI servers) the
+output automatically switches to newline-based updates so that logs remain
+readable.
 
 ### Phase 4 – Feature interpretation
 
@@ -180,6 +190,7 @@ Reusable helper functions in `helper_functions/` include:
 FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
 M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
 [bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
+pr = ProgressReporter('Demo loop', 10); pr.update();
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
