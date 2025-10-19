@@ -24,6 +24,21 @@ function [model, selectedIdx, selectedWn, diagnostics] = train_final_pipeline_mo
 %   in the Phase 2 script. It mirrors the preprocessing steps used during
 %   cross‑validation so the final model can be applied consistently later on.
 
+    if iscolumn(wavenumbers)
+        wavenumbers = wavenumbers';
+    end
+
+    if isa(pipelineConfig, 'pipelines.ClassificationPipeline')
+        if nargin < 5
+            hyperparams = struct();
+        end
+        trainedPipeline = pipelineConfig.fit(X, y, wavenumbers, hyperparams);
+        model = trainedPipeline;
+        selectedIdx = trainedPipeline.getSelectedFeatureIndices();
+        selectedWn = trainedPipeline.getSelectedWavenumbers();
+        return;
+    end
+
     % Default outputs
     model = struct();
     selectedIdx = [];

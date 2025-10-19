@@ -216,7 +216,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
 
     pipeline_names_from_cv = {};
     if ~isempty(modelSet.pipelines)
-        pipeline_names_from_cv = cellfun(@(p) p.name, modelSet.pipelines, 'UniformOutput', false);
+        pipeline_names_from_cv = cellfun(@extract_pipeline_name, modelSet.pipelines, 'UniformOutput', false);
     end
 
     for i=1:numel(modelSet.modelFiles)
@@ -227,8 +227,16 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
             continue;
         end
         finalModel = S.finalModel;
-        mdlName = finalModel.featureSelectionMethod;
-        if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
+        if isa(finalModel,'pipelines.TrainedClassificationPipeline')
+            mdlName = char(finalModel.Name);
+        elseif isfield(finalModel,'pipelineName')
+            mdlName = finalModel.pipelineName;
+        elseif isfield(finalModel,'featureSelectionMethod')
+            mdlName = finalModel.featureSelectionMethod;
+        else
+            mdlName = sprintf('Model_%d', i);
+        end
+        mdlName = char(mdlName);
 
         [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
         [metrics, posScores] = evaluate_pipeline_metrics(y, ypred, score, finalModel.LDAModel.ClassNames, metricNamesEval);
