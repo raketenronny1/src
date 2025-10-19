@@ -2,6 +2,27 @@
 
 This repository contains MATLAB code for analysing Fourier-transform infrared (FT-IR) spectra of meningioma tissue in order to discriminate tumour grades. The code is organised into a series of phases that perform preprocessing, model selection, final evaluation and interpretation.
 
+## Workflow Overview
+
+```mermaid
+flowchart LR
+    A[Import & Preprocessing<br>(`import_preprocessing/`)] --> B[Phase 2<br>Model Selection]
+    B --> C[Phase 3<br>Final Evaluation]
+    C --> D[Phase 4<br>Feature Interpretation]
+    D --> E[Visualization & Reporting<br>(`plotting/` & exports)]
+    E --> F[Insights for Clinical Review]
+    B --> G[data_management/
+        Exports]
+    A --> H[data/
+        models/
+        results/]
+    H -. provides inputs .-> B
+    H -. provides inputs .-> C
+    H -. provides inputs .-> D
+```
+
+GitHub renders Mermaid diagrams automatically in Markdown previews and on repository pages. To verify the rendering, push the changes and open the README on GitHub.com—use the **Preview** tab in pull requests or the repository view to ensure the diagram displays correctly. If the diagram does not render (for example, in Markdown viewers without Mermaid support), copy the code block above into the [Mermaid Live Editor](https://mermaid.live/) or use a compatible Markdown renderer to view the workflow.
+
 ## Directory layout
 
 - `import_preprocessing/` – scripts for data preparation and preprocessing.
