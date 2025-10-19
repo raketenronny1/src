@@ -3,12 +3,13 @@
 % Helper function to perform inner cross-validation for hyperparameter tuning.
 % Date: 2025-05-15 (Updated with fscmrmr fix; Corrected to enforce fisherFeaturePercent)
 
-function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
+function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
     pipelineConfig, wavenumbers_original, numInnerFolds, metricNames, positiveClassLabel)
 
-    paramGridCells = {}; 
-    paramNames = {};     
+    paramGridCells = {};
+    paramNames = {};
+    diagnostics = init_diagnostics('perform_inner_cv');
 
     if ismember('binningFactor', pipelineConfig.hyperparameters_to_tune)
         paramGridCells{end+1} = pipelineConfig.binningFactors(:)'; 
@@ -70,8 +71,10 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     priorityMetricName = 'F2_WHO3'; 
     f2_idx_in_metrics = find(strcmpi(metricNames, priorityMetricName));
     if isempty(f2_idx_in_metrics)
-        warning('perform_inner_cv: Priority metric F2_WHO3 not found in metricNames. Using first metric "%s" for optimization.', metricNames{1});
-        f2_idx_in_metrics = 1; 
+        entry = log_pipeline_message('warning', 'perform_inner_cv', ...
+            'Priority metric F2_WHO3 not found in metricNames. Using "%s" for optimisation.', metricNames{1});
+        diagnostics = record_diagnostic(diagnostics, entry, [], 'warning');
+        f2_idx_in_metrics = 1;
         priorityMetricName = metricNames{1};
     end
     
@@ -92,14 +95,17 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     
     if isempty(X_inner_train_full) || length(unique(y_inner_train_full)) < 2 || actualNumInnerFolds < 2
         if ~isempty(hyperparamCombinations)
-            bestHyperparams = hyperparamCombinations{1}; 
-        else 
-            bestHyperparams = struct('binningFactor',1); 
+            bestHyperparams = hyperparamCombinations{1};
+        else
+            bestHyperparams = struct('binningFactor',1);
             if isfield(pipelineConfig,'binningFactors') && ~isempty(pipelineConfig.binningFactors)
                  bestHyperparams.binningFactor = pipelineConfig.binningFactors(1);
             end
         end
         for iMet = 1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
+        entry = log_pipeline_message('error', 'perform_inner_cv', ...
+            'Insufficient data or label diversity for inner CV. Returning defaults.');
+        diagnostics = record_diagnostic(diagnostics, entry, [], 'error');
         return;
     end
 
@@ -116,15 +122,24 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     try
         innerCV_probeLevel = cvpartition(probe_WHO_Grade_inner, 'KFold', actualNumInnerFolds);
     catch ME_cvp
+        entry = log_pipeline_message('warning', 'perform_inner_cv:cvpartition', ...
+            'Stratified cvpartition failed (%s). Falling back to unstratified folds.', ME_cvp.message);
+        diagnostics = record_diagnostic(diagnostics, entry, ME_cvp, 'warning');
         if actualNumInnerFolds >= 2 && length(probe_WHO_Grade_inner) >= actualNumInnerFolds
-            try 
-                innerCV_probeLevel = cvpartition(length(probe_WHO_Grade_inner), 'KFold', actualNumInnerFolds); 
-            catch 
-                 if ~isempty(hyperparamCombinations), bestHyperparams = hyperparamCombinations{1}; else, bestHyperparams = struct('binningFactor',1); end
-                 for iMet = 1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
-                 return;
+            try
+                innerCV_probeLevel = cvpartition(length(probe_WHO_Grade_inner), 'KFold', actualNumInnerFolds);
+            catch ME_cvp_unstrat
+                entry = log_pipeline_message('error', 'perform_inner_cv:cvpartition', ...
+                    'Failed to create inner CV folds: %s', ME_cvp_unstrat.message);
+                diagnostics = record_diagnostic(diagnostics, entry, ME_cvp_unstrat, 'error');
+                if ~isempty(hyperparamCombinations), bestHyperparams = hyperparamCombinations{1}; else, bestHyperparams = struct('binningFactor',1); end
+                for iMet = 1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
+                return;
             end
         else
+            entry = log_pipeline_message('error', 'perform_inner_cv:cvpartition', ...
+                'Not enough probes (%d) for %d folds.', length(probe_WHO_Grade_inner), actualNumInnerFolds);
+            diagnostics = record_diagnostic(diagnostics, entry, [], 'error');
             if ~isempty(hyperparamCombinations), bestHyperparams = hyperparamCombinations{1}; else, bestHyperparams = struct('binningFactor',1); end
             for iMet = 1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
             return;
@@ -204,7 +219,10 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                                 selectedFcIdx_in_current_w = 1:numComponents_i; 
                             end
                         catch ME_pca_inner
-                            % PCA failed, use original features for this combo
+                            entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:PCA', pipelineConfig.name), ...
+                                'PCA failed on inner fold %d (combo %d): %s', kInner, iCombo, ME_pca_inner.message);
+                            diagnostics = record_diagnostic(diagnostics, entry, ME_pca_inner, 'warning');
+                            selectedFcIdx_in_current_w = [];
                         end
                     end
                 case 'mrmr'
@@ -225,20 +243,26 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                                 actual_num_to_take_inner = min(numFeat, length(ranked_indices_inner));
                                 if actual_num_to_take_inner > 0
                                     selectedFcIdx_in_current_w = ranked_indices_inner(1:actual_num_to_take_inner);
-                                else 
-                                    selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
+                                else
+                                    selectedFcIdx_in_current_w = [];
                                 end
                             end
                         catch ME_mrmr_inner
-                             fprintf('ERROR MRMR (perform_inner_cv): %s. Using all %d features for this fold.\n', ME_mrmr_inner.message, size(X_train_p,2)); 
-                             selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
+                            entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:MRMR', pipelineConfig.name), ...
+                                'fscmrmr failed on inner fold %d (combo %d): %s', kInner, iCombo, ME_mrmr_inner.message);
+                            diagnostics = record_diagnostic(diagnostics, entry, ME_mrmr_inner, 'warning');
+                            selectedFcIdx_in_current_w = [];
                         end
                     end
             end
             
-            if isempty(selectedFcIdx_in_current_w) && size(X_train_p, 2) > 0 
-                selectedFcIdx_in_current_w = 1:size(X_train_p, 2); 
-            elseif isempty(X_train_p) || size(X_train_p,2) == 0 
+            if isempty(selectedFcIdx_in_current_w) && size(X_train_p, 2) > 0
+                entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:FeatureSelection', pipelineConfig.name), ...
+                    'Empty feature set on inner fold %d (combo %d). Marking fold as invalid.', kInner, iCombo);
+                diagnostics = record_diagnostic(diagnostics, entry, [], 'warning');
+                tempFoldMetricsArr(kInner, :) = NaN;
+                continue;
+            elseif isempty(X_train_p) || size(X_train_p,2) == 0
                 tempFoldMetricsArr(kInner, :) = NaN; continue;
             end
 
@@ -247,17 +271,26 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
 
             classifier_inner = [];
             if isempty(X_fs_train_fold) || size(X_fs_train_fold,1)<2 || length(unique(y_train_fold))<2
+                entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:DataCheck', pipelineConfig.name), ...
+                    'Insufficient samples or class diversity on inner fold %d (combo %d).', kInner, iCombo);
+                diagnostics = record_diagnostic(diagnostics, entry, [], 'warning');
                 tempFoldMetricsArr(kInner, :) = NaN; continue;
             end
 
             switch lower(pipelineConfig.classifier)
                 case 'lda'
-                    if size(X_fs_train_fold, 2) == 1 && var(X_fs_train_fold) < 1e-9 
+                    if size(X_fs_train_fold, 2) == 1 && var(X_fs_train_fold) < 1e-9
+                        entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:LDA', pipelineConfig.name), ...
+                            'Singular feature detected on inner fold %d (combo %d).', kInner, iCombo);
+                        diagnostics = record_diagnostic(diagnostics, entry, [], 'warning');
                         tempFoldMetricsArr(kInner, :) = NaN; continue;
                     end
                     try
                         classifier_inner = fitcdiscr(X_fs_train_fold, y_train_fold);
                     catch ME_lda_inner
+                        entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:LDA', pipelineConfig.name), ...
+                            'LDA failed on inner fold %d (combo %d): %s', kInner, iCombo, ME_lda_inner.message);
+                        diagnostics = record_diagnostic(diagnostics, entry, ME_lda_inner, 'warning');
                         tempFoldMetricsArr(kInner, :) = NaN; continue;
                     end
             end
@@ -280,6 +313,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                     end
                     tempFoldMetricsArr(kInner, :) = cell2mat(struct2cell(currentInnerFoldMetricsStruct))';
                 catch ME_predict_eval
+                    entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:Predict', pipelineConfig.name), ...
+                        'Prediction or metric calculation failed on inner fold %d (combo %d): %s', kInner, iCombo, ME_predict_eval.message);
+                    diagnostics = record_diagnostic(diagnostics, entry, ME_predict_eval, 'warning');
                     tempFoldMetricsArr(kInner, :) = NaN;
                 end
             else
@@ -305,11 +341,37 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         end
     end 
     
-    if isempty(fieldnames(bestHyperparams)) && ~isempty(hyperparamCombinations) 
-        bestHyperparams = hyperparamCombinations{1}; 
+    if isempty(fieldnames(bestHyperparams)) && ~isempty(hyperparamCombinations)
+        bestHyperparams = hyperparamCombinations{1};
         for iMet=1:length(metricNames), bestOverallPerfMetrics.(metricNames{iMet}) = 0; end
         if isfield(bestOverallPerfMetrics, priorityMetricName) && ~isempty(f2_idx_in_metrics) % check f2_idx_in_metrics also
              bestOverallPerfMetrics.(metricNames{f2_idx_in_metrics}) = -Inf; % Ensure it doesn't look like a good result if all failed
         end
+        entry = log_pipeline_message('error', sprintf('perform_inner_cv:%s', pipelineConfig.name), ...
+            'No valid hyperparameter combination found. Defaulting to first combination.');
+        diagnostics = record_diagnostic(diagnostics, entry, [], 'error');
+    end
+end
+
+function diagnostics = init_diagnostics(context)
+    diagnostics = struct();
+    diagnostics.status = 'ok';
+    diagnostics.entries = struct('timestamp',{},'level',{},'context',{},'message',{});
+    diagnostics.errors = {};
+    diagnostics.context = context;
+end
+
+function diagnostics = record_diagnostic(diagnostics, entry, exceptionObj, level)
+    diagnostics.entries(end+1) = entry; %#ok<AGROW>
+    if nargin >= 3 && ~isempty(exceptionObj)
+        diagnostics.errors{end+1} = exceptionObj; %#ok<AGROW>
+    end
+    switch lower(level)
+        case 'error'
+            diagnostics.status = 'error';
+        case 'warning'
+            if ~strcmpi(diagnostics.status, 'error')
+                diagnostics.status = 'warning';
+            end
     end
 end

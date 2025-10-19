@@ -204,9 +204,8 @@ Reusable helper functions in `helper_functions/` include:
 ```matlab
 [specB, wnB] = bin_spectra(rawSpec, wn, 5);           % Spectral binning
 FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
-metricOpts = struct('positiveClass', 3, 'metricNames', {'Accuracy','AUC'});
-M = calculate_performance_metrics(yTrue, yPred, scores(:,2), metricOpts);
-[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'}, 3);
+M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
+[bestParams, perf, diag] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
