@@ -11,9 +11,14 @@ function run_phase3_final_evaluation(cfg)
 if nargin < 1
     cfg = struct();
 end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
-if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
-if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
 
 runConfig = load_run_configuration(cfg.projectRoot, cfg);
 phase3Config = runConfig.phase3;
@@ -33,13 +38,11 @@ if ~isfolder(figuresPath); mkdir(figuresPath); end
 %% 1. Load test data and build evaluation variants
 fprintf('Loading test set...\n');
 dataPath = P.dataPath;
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-wavenumbers = wavenumbers_roi;
-
-T = load(fullfile(dataPath,'data_table_test.mat'),'dataTableTest');
-dataTableTest = T.dataTableTest;
-[X_test, y_test, ~, probeIDs_test] = flatten_spectra_for_pca( ...
-    dataTableTest, length(wavenumbers));
+testData = load_dataset_split(dataPath, 'test');
+wavenumbers = testData.wavenumbers;
+X_test = testData.X;
+y_test = testData.y;
+probeIDs_test = testData.probeIDs;
 
 testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg);
 
@@ -228,24 +231,22 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
 
         [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
-        posIdx = find_positive_class_column(finalModel.LDAModel.ClassNames, positiveClassLabel);
-        if isempty(posIdx)
-            warning('Positive class %g not found in model output for %s.', positiveClassLabel, mf);
-            scorePositive = nan(numel(y),1);
-        else
-            scorePositive = score(:,posIdx);
+        [metrics, posScores] = evaluate_pipeline_metrics(y, ypred, score, finalModel.LDAModel.ClassNames, metricNamesEval);
+        if isempty(posScores) && ~isempty(score)
+            posIdx = find(finalModel.LDAModel.ClassNames==3, 1, 'first');
+            if ~isempty(posIdx)
+                posScores = score(:, posIdx);
+            end
         end
-        metricOptions = struct('positiveClass', positiveClassLabel, 'metricNames', metricNamesEval);
-        metrics = calculate_performance_metrics(y, ypred, scorePositive, metricOptions);
 
         entry = struct();
         entry.name = mdlName;
         entry.metrics = metrics;
         entry.modelFile = mf;
-        entry.scores = scorePositive;
+        entry.scores = posScores;
         entry.predicted = ypred;
 
-        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,scorePositive,ypred,metricNamesEval,positiveClassLabel,negativeClassLabel,probeMetricNames);
+        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,posScores,ypred,metricNamesEval);
         entry.probeTable = probeTable;
         entry.probeMetrics = probeMetrics;
 
@@ -258,10 +259,10 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         end
 
         % ROC curve file per variant/model set combination
-        if all(isnan(scorePositive))
+        if isempty(posScores)
             Xroc = [0 1]; Yroc = [0 1]; AUC = NaN;
         else
-            [Xroc,Yroc,~,AUC] = perfcurve(y,scorePositive,positiveClassLabel);
+            [Xroc,Yroc,~,AUC] = perfcurve(y,posScores,3);
         end
         rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s_%s.png', entry.name, modelSet.id, variant.id));
         fig = figure('Visible','off');
@@ -290,23 +291,13 @@ function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,met
     for i=1:numel(probes)
         idx = strcmp(probeIDs,probes(i));
         tbl.TrueLabel(i) = mode(yTrue(idx));
-        tbl.MeanProbWHO3(i) = mean(scores(idx));
-        if tbl.MeanProbWHO3(i) >= 0.5
-            tbl.PredLabel(i) = positiveClassLabel;
+        if isempty(scores)
+            tbl.MeanProbWHO3(i) = NaN;
         else
-            if ~isnan(negativeClassLabel)
-                tbl.PredLabel(i) = negativeClassLabel;
-            else
-                % Fallback: use the most common non-positive label in the cohort
-                nonPositiveLabels = unique(yTrue(yTrue ~= positiveClassLabel));
-                if ~isempty(nonPositiveLabels)
-                    tbl.PredLabel(i) = nonPositiveLabels(1);
-                else
-                    tbl.PredLabel(i) = positiveClassLabel;
-                end
-            end
+            tbl.MeanProbWHO3(i) = mean(scores(idx));
         end
+        tbl.PredLabel(i) = tbl.MeanProbWHO3(i)>0.5; % 0=>WHO1, 1=>WHO3
+        tbl.PredLabel(i) = tbl.PredLabel(i).*2+1; % convert 0->1,1->3
     end
-    metricsOptions = struct('positiveClass', positiveClassLabel, 'metricNames', probeMetricNames);
-    metrics = calculate_performance_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,metricsOptions);
+    metrics = evaluate_pipeline_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,[],metricNames);
 end
