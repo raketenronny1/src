@@ -46,38 +46,25 @@ function [model, selectedIdx, selectedWn, diagnostics] = train_final_pipeline_mo
     diagnostics = init_diagnostics();
     baseContext = sprintf('train_final_pipeline_model:%s', pipelineConfig.name);
 
-    Xp = X; currentWn = wavenumbers;
-
-    % --- Binning ---
-    model.binningFactor = 1;
-    if isfield(hyperparams, 'binningFactor') && hyperparams.binningFactor > 1
-        [Xp, currentWn] = bin_spectra(X, wavenumbers, hyperparams.binningFactor);
-        model.binningFactor = hyperparams.binningFactor;
+    % Ensure wavenumbers row vector
+    if iscolumn(wavenumbers)
+        wavenumbers = wavenumbers';
     end
 
-    % --- Feature selection ---
-    model.featureSelectionMethod = pipelineConfig.feature_selection_method;
-    switch lower(pipelineConfig.feature_selection_method)
-        case 'fisher'
-            if isfield(hyperparams, 'fisherFeaturePercent')
-                numFeat = ceil(hyperparams.fisherFeaturePercent * size(Xp,2));
-            else
-                numFeat = size(Xp,2);
-            end
-            numFeat = min(numFeat, size(Xp,2));
-            if numFeat > 0 && size(Xp,1) > 1 && length(unique(y)) == 2
-                fr = calculate_fisher_ratio(Xp, y);
-                [~, sortIdx] = sort(fr, 'descend', 'MissingPlacement','last');
-                selectedIdx = sortIdx(1:numFeat);
-            else
-                selectedIdx = 1:size(Xp,2);
-            end
-            Xfs = Xp(:, selectedIdx);
-            selectedWn = currentWn(selectedIdx);
-            model.selectedFeatureIndices = selectedIdx;
+    [Xp, currentWn, preprocessInfo] = apply_pipeline_preprocessing(X, wavenumbers, hyperparams);
+    model.binningFactor = preprocessInfo.binningFactor;
 
+    [Xfs, selectionInfo] = fit_pipeline_feature_selection(Xp, y, pipelineConfig, hyperparams, currentWn);
+    model.featureSelectionMethod = pipelineConfig.feature_selection_method;
+    selectedIdx = selectionInfo.selectedFeatureIndices;
+    selectedWn = selectionInfo.selectedWavenumbers;
+
+    switch lower(model.featureSelectionMethod)
         case 'pca'
-            Xfs = Xp;
+            model.PCACoeff = selectionInfo.PCACoeff;
+            model.PCAMu = selectionInfo.PCAMu;
+            model.selectedFeatureIndices = selectionInfo.selectedFeatureIndices;
+        otherwise
             model.PCACoeff = [];
             model.PCAMu = [];
             if size(Xp,2) > 0 && size(Xp,1) > 1 && size(Xp,1) > size(Xp,2)

@@ -7,7 +7,21 @@ function run_phase2_model_selection(cfg)
 
 fprintf('PHASE 2: Model Selection - %s\n', string(datetime('now')));
 if nargin < 1, cfg = struct(); end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
+
+runConfig = load_run_configuration(cfg.projectRoot, cfg);
+phase2Config = runConfig.phase2;
+metricNames = phase2Config.metrics;
+numOuterFolds = phase2Config.outerFolds;
+numInnerFolds = phase2Config.innerFolds;
+positiveClassLabel = runConfig.classLabels.positive;
 
 % Add helper_functions/ to the path and obtain common directories
 P = setup_project_paths(cfg.projectRoot,'Phase2');
@@ -18,16 +32,11 @@ if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
 %% Load base training data
-trainTablePath = fullfile(dataPath,'data_table_train.mat');
-if ~isfile(trainTablePath)
-    error('Training table not found: %s', trainTablePath);
-end
-load(trainTablePath,'dataTableTrain');
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
-
-[X_all, y_all, ~, probeIDs_all] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+trainData = load_dataset_split(dataPath, 'train');
+wavenumbers_roi = trainData.wavenumbers;
+X_all = trainData.X;
+y_all = trainData.y;
+probeIDs_all = trainData.probeIDs;
 
 %% Build dataset variants
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);
@@ -53,9 +62,6 @@ end
 
 %% Define pipelines
 pipelines = define_pipelines();
-metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
-    'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
-numOuterFolds = 5; numInnerFolds = 3;
 
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
