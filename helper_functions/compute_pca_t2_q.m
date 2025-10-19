@@ -36,7 +36,11 @@ function results = compute_pca_t2_q(X, alpha, varianceToModel)
         end
     end
 
-    [coeff, score, latent, ~, explained, mu] = pca(X, 'Algorithm','svd');
+    cacheConfig = struct('signature', struct( ...
+        'context', 'compute_pca_t2_q', ...
+        'varianceToModel', varianceToModel, ...
+        'alpha', alpha));
+    [coeff, score, latent, ~, explained, mu] = cached_pca(X, cacheConfig, 'Algorithm','svd');
     if isempty(explained)
         error('compute_pca_t2_q: PCA returned empty results.');
     end
