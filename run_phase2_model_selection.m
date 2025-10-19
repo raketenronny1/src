@@ -128,27 +128,45 @@ function datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, c
     end
 end
 
-function pipelines = define_pipelines()
-    pipelines = cell(0,1); pidx=0;
+function pipelinesOut = define_pipelines()
+    pipelineList = cell(0,1); pidx = 0;
 
-    p=struct(); p.name='BaselineLDA'; p.feature_selection_method='none'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor'}; p.binningFactors=[4 8];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "BaselineLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.NoFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[1 4 8]), ...
+        {'binningFactor'});
 
-    p=struct(); p.name='FisherLDA'; p.feature_selection_method='fisher'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','fisherFeaturePercent'};
-    p.binningFactors=[4 8]; p.fisherFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4 0.5];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "FisherLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.FisherFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'fisherFeaturePercent',[0.05 0.1 0.2 0.3 0.4 0.5]), ...
+        {'binningFactor','fisherFeaturePercent'});
 
-    p=struct(); p.name='PCALDA'; p.feature_selection_method='pca'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','pcaVarianceToExplain'};
-    p.binningFactors=[4 8]; p.pcaVarianceToExplain_range=[0.90 0.95 0.99];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "PCALDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.PCAFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'pcaVarianceToExplain',[0.90 0.95 0.99]), ...
+        {'binningFactor','pcaVarianceToExplain'});
 
-    p=struct(); p.name='MRMRLDA'; p.feature_selection_method='mrmr'; p.classifier='LDA';
-    p.hyperparameters_to_tune={'binningFactor','mrmrFeaturePercent'};
-    p.binningFactors=[4 8]; p.mrmrFeaturePercent_range=[0.05 0.1 0.2 0.3 0.4];
-    pidx=pidx+1; pipelines{pidx}=p;
+    pidx = pidx + 1;
+    pipelineList{pidx} = pipelines.ClassificationPipeline( ...
+        "MRMRLDA", ...
+        pipelines.BinningTransformer(1), ...
+        pipelines.MRMRFeatureSelector(), ...
+        pipelines.LDAClassifier(), ...
+        struct('binningFactor',[4 8],'mrmrFeaturePercent',[0.05 0.1 0.2 0.3 0.4]), ...
+        {'binningFactor','mrmrFeaturePercent'});
+    pipelinesOut = pipelineList;
 end
 
 function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
@@ -166,7 +184,7 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
-        fprintf('\nEvaluating pipeline: %s\n', pipe.name);
+        fprintf('\nEvaluating pipeline: %s\n', char(pipe.Name));
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
         for k=1:numOuterFolds
@@ -179,8 +197,12 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
             outerBestHyper{k}=bestHyper;
             [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
-            [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(finalModel.LDAModel.ClassNames==3);
+            [ypred,score,classNames] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+            posIdx=find(classNames==3,1);
+            if isempty(posIdx)
+                warning('Positive class not found in predictions for pipeline %s.', pipe.Name);
+                continue;
+            end
             m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
             outerMetrics(k,:)=cell2mat(struct2cell(m))';
         end
@@ -192,7 +214,7 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
         aggHyper=aggregate_best_hyperparams(outerBestHyper);
         [finalModel,selectedIdx,selectedWn]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
-        modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
+        modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),char(pipe.Name)));
         save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds');
         res.finalModelFile=modelFile;
 

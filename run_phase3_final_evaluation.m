@@ -207,7 +207,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
 
     pipeline_names_from_cv = {};
     if ~isempty(modelSet.pipelines)
-        pipeline_names_from_cv = cellfun(@(p) p.name, modelSet.pipelines, 'UniformOutput', false);
+        pipeline_names_from_cv = cellfun(@extract_pipeline_name, modelSet.pipelines, 'UniformOutput', false);
     end
 
     for i=1:numel(modelSet.modelFiles)
@@ -218,11 +218,23 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
             continue;
         end
         finalModel = S.finalModel;
-        mdlName = finalModel.featureSelectionMethod;
-        if isfield(finalModel,'pipelineName'); mdlName = finalModel.pipelineName; end
+        if isa(finalModel,'pipelines.TrainedClassificationPipeline')
+            mdlName = char(finalModel.Name);
+        elseif isfield(finalModel,'pipelineName')
+            mdlName = finalModel.pipelineName;
+        elseif isfield(finalModel,'featureSelectionMethod')
+            mdlName = finalModel.featureSelectionMethod;
+        else
+            mdlName = sprintf('Model_%d', i);
+        end
+        mdlName = char(mdlName);
 
-        [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
-        posIdx = find(finalModel.LDAModel.ClassNames==3);
+        [ypred,score,classNames] = apply_model_to_data(finalModel,X,wavenumbers);
+        posIdx = find(classNames==3,1);
+        if isempty(posIdx)
+            warning('Positive class (3) not found in model %s scores. Skipping.', mdlName);
+            continue;
+        end
         metrics = calculate_performance_metrics(y,ypred,score(:,posIdx),3,metricNamesEval);
 
         entry = struct();
@@ -255,6 +267,20 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         entry.rocFile = rocFile;
 
         models(end+1) = entry; %#ok<AGROW>
+    end
+end
+
+function name = extract_pipeline_name(pipelineEntry)
+    if isa(pipelineEntry, 'pipelines.ClassificationPipeline')
+        name = char(pipelineEntry.Name);
+    elseif isobject(pipelineEntry) && isprop(pipelineEntry, 'Name')
+        name = char(pipelineEntry.Name);
+    elseif isstruct(pipelineEntry) && isfield(pipelineEntry, 'name')
+        name = pipelineEntry.name;
+    elseif isstruct(pipelineEntry) && isfield(pipelineEntry, 'pipelineName')
+        name = pipelineEntry.pipelineName;
+    else
+        name = '';
     end
 end
 

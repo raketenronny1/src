@@ -7,6 +7,13 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
     X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
     pipelineConfig, wavenumbers_original, numInnerFolds, metricNames)
 
+    if isa(pipelineConfig, 'pipelines.ClassificationPipeline')
+        [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv_pipeline(...
+            X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
+            pipelineConfig, wavenumbers_original, numInnerFolds, metricNames);
+        return;
+    end
+
     paramGridCells = {}; 
     paramNames = {};     
 
@@ -318,5 +325,130 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
         if isfield(bestOverallPerfMetrics, priorityMetricName) && ~isempty(f2_idx_in_metrics) % check f2_idx_in_metrics also
              bestOverallPerfMetrics.(metricNames{f2_idx_in_metrics}) = -Inf; % Ensure it doesn't look like a good result if all failed
         end
+    end
+end
+
+function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv_pipeline(...
+    X_inner_train_full, y_inner_train_full, probeIDs_inner_train_full, ...
+    pipelineObj, wavenumbers_original, numInnerFolds, metricNames)
+
+    bestHyperparams = pipelineObj.getDefaultHyperparameters();
+    bestOverallPerfMetrics = struct();
+    for iMet = 1:numel(metricNames)
+        bestOverallPerfMetrics.(metricNames{iMet}) = NaN;
+    end
+
+    hyperparamCombinations = pipelineObj.getHyperparameterCombinations();
+    priorityMetricName = 'F2_WHO3';
+    f2_idx_in_metrics = find(strcmpi(metricNames, priorityMetricName), 1);
+    if isempty(f2_idx_in_metrics)
+        priorityMetricName = metricNames{1};
+        f2_idx_in_metrics = 1;
+    end
+
+    uniqueProbesInner = unique(probeIDs_inner_train_full);
+    actualNumInnerFolds = numInnerFolds;
+    if numel(uniqueProbesInner) < numInnerFolds && numel(uniqueProbesInner) > 0
+        actualNumInnerFolds = max(2, numel(uniqueProbesInner));
+    elseif isempty(uniqueProbesInner) && ~isempty(X_inner_train_full)
+        actualNumInnerFolds = 1;
+    end
+
+    if isempty(X_inner_train_full) || numel(unique(y_inner_train_full)) < 2 || actualNumInnerFolds < 2
+        if ~isempty(hyperparamCombinations)
+            bestHyperparams = hyperparamCombinations{1};
+        end
+        for iMet = 1:numel(metricNames)
+            bestOverallPerfMetrics.(metricNames{iMet}) = 0;
+        end
+        return;
+    end
+
+    probe_WHO_Grade_inner = zeros(numel(uniqueProbesInner), 1);
+    [~, ~, groupIdxPerSpectrum_inner] = unique(probeIDs_inner_train_full, 'stable');
+    for i = 1:numel(uniqueProbesInner)
+        probeSpectraLabels_inner = y_inner_train_full(groupIdxPerSpectrum_inner == i);
+        if any(probeSpectraLabels_inner == 3)
+            probe_WHO_Grade_inner(i) = 3;
+        else
+            probe_WHO_Grade_inner(i) = mode(probeSpectraLabels_inner);
+        end
+    end
+
+    try
+        innerCV_probeLevel = cvpartition(probe_WHO_Grade_inner, 'KFold', actualNumInnerFolds);
+    catch
+        try
+            innerCV_probeLevel = cvpartition(numel(probe_WHO_Grade_inner), 'KFold', actualNumInnerFolds);
+        catch
+            bestHyperparams = hyperparamCombinations{1};
+            for iMet = 1:numel(metricNames)
+                bestOverallPerfMetrics.(metricNames{iMet}) = 0;
+            end
+            return;
+        end
+    end
+
+    bestInnerPerfScore = -Inf;
+    for iCombo = 1:numel(hyperparamCombinations)
+        currentHyperparams = hyperparamCombinations{iCombo};
+        foldMetrics = NaN(actualNumInnerFolds, numel(metricNames));
+
+        for kInner = 1:actualNumInnerFolds
+            isInnerTrainProbe_idx = training(innerCV_probeLevel, kInner);
+            isInnerValProbe_idx   = test(innerCV_probeLevel, kInner);
+
+            innerTrainProbeIDs = uniqueProbesInner(isInnerTrainProbe_idx);
+            innerValProbeIDs   = uniqueProbesInner(isInnerValProbe_idx);
+
+            idxInnerTrain_Spectra = ismember(probeIDs_inner_train_full, innerTrainProbeIDs);
+            idxInnerVal_Spectra   = ismember(probeIDs_inner_train_full, innerValProbeIDs);
+
+            X_train_fold = X_inner_train_full(idxInnerTrain_Spectra, :);
+            y_train_fold = y_inner_train_full(idxInnerTrain_Spectra);
+            X_val_fold   = X_inner_train_full(idxInnerVal_Spectra, :);
+            y_val_fold   = y_inner_train_full(idxInnerVal_Spectra);
+
+            if isempty(X_train_fold) || isempty(X_val_fold) || numel(unique(y_train_fold)) < 2
+                continue;
+            end
+
+            try
+                trainedModel = pipelineObj.fit(X_train_fold, y_train_fold, wavenumbers_original, currentHyperparams);
+                [y_pred, scores, classNames] = trainedModel.predict(X_val_fold, wavenumbers_original);
+            catch
+                continue;
+            end
+
+            posIdx = find(classNames == 3, 1);
+            if isempty(posIdx)
+                continue;
+            end
+
+            perf = calculate_performance_metrics(y_val_fold, y_pred, scores(:, posIdx), 3, metricNames);
+            foldMetrics(kInner, :) = cell2mat(struct2cell(perf))';
+        end
+
+        meanPerf = nanmean(foldMetrics, 1);
+        currentPriorityScore = meanPerf(f2_idx_in_metrics);
+        if ~isnan(currentPriorityScore) && currentPriorityScore > bestInnerPerfScore
+            bestInnerPerfScore = currentPriorityScore;
+            bestHyperparams = currentHyperparams;
+            for iMet = 1:numel(metricNames)
+                if iMet <= numel(meanPerf)
+                    bestOverallPerfMetrics.(metricNames{iMet}) = meanPerf(iMet);
+                else
+                    bestOverallPerfMetrics.(metricNames{iMet}) = NaN;
+                end
+            end
+        end
+    end
+
+    if bestInnerPerfScore == -Inf && ~isempty(hyperparamCombinations)
+        bestHyperparams = hyperparamCombinations{1};
+        for iMet = 1:numel(metricNames)
+            bestOverallPerfMetrics.(metricNames{iMet}) = 0;
+        end
+        bestOverallPerfMetrics.(priorityMetricName) = -Inf;
     end
 end
