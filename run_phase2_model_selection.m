@@ -25,16 +25,11 @@ if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
 %% Load base training data
-trainTablePath = fullfile(dataPath,'data_table_train.mat');
-if ~isfile(trainTablePath)
-    error('Training table not found: %s', trainTablePath);
-end
-load(trainTablePath,'dataTableTrain');
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
-
-[X_all, y_all, ~, probeIDs_all] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+trainData = load_dataset_split(dataPath, 'train');
+wavenumbers_roi = trainData.wavenumbers;
+X_all = trainData.X;
+y_all = trainData.y;
+probeIDs_all = trainData.probeIDs;
 
 %% Build dataset variants
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);

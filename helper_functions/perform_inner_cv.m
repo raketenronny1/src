@@ -170,8 +170,10 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
                 continue;
             end
 
-            current_w_fold = wavenumbers_original;
-            X_train_p = X_train_fold; X_val_p = X_val_fold; 
+            [X_train_p, current_w_fold, preprocessInfo] = apply_pipeline_preprocessing( ...
+                X_train_fold, wavenumbers_original, currentHyperparams);
+            X_val_p = apply_pipeline_preprocessing( ...
+                X_val_fold, wavenumbers_original, currentHyperparams, preprocessInfo);
 
             if currentHyperparams.binningFactor > 1
                 [X_train_p, current_w_fold] = bin_spectra(X_train_fold, wavenumbers_original, currentHyperparams.binningFactor);
@@ -266,8 +268,9 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
                 tempFoldMetricsArr(kInner, :) = NaN; continue;
             end
 
-            X_fs_train_fold = X_train_p(:, selectedFcIdx_in_current_w);
-            X_fs_val_fold   = X_val_p(:, selectedFcIdx_in_current_w);
+            [X_fs_train_fold, selectionInfo] = fit_pipeline_feature_selection( ...
+                X_train_p, y_train_fold, pipelineConfig, currentHyperparams, current_w_fold);
+            X_fs_val_fold = apply_pipeline_feature_selection(X_val_p, selectionInfo);
 
             classifier_inner = [];
             if isempty(X_fs_train_fold) || size(X_fs_train_fold,1)<2 || length(unique(y_train_fold))<2
@@ -298,27 +301,9 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
             if ~isempty(classifier_inner) && ~isempty(X_fs_val_fold) && ~isempty(y_val_fold)
                 try
                     [y_pred_inner, y_scores_inner] = predict(classifier_inner, X_fs_val_fold);
-                    positiveClassLabel = 3; 
-                    classOrder_inner = classifier_inner.ClassNames;
-                    positiveClassColIdx_inner = [];
-                    if isnumeric(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    elseif iscategorical(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(string(classOrder_inner)) == positiveClassLabel);
-                    elseif iscellstr(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(classOrder_inner) == positiveClassLabel);
-                    else 
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    end
-                    
-                    if isempty(positiveClassColIdx_inner) || ( ~isempty(positiveClassColIdx_inner) && (max(positiveClassColIdx_inner) > size(y_scores_inner,2)) )
-                        currentInnerFoldMetricsStruct = struct();
-                        for iMet=1:length(metricNames), currentInnerFoldMetricsStruct.(metricNames{iMet}) = NaN; end
-                    else
-                        scores_for_positive_class_inner = y_scores_inner(:, positiveClassColIdx_inner);
-                        currentInnerFoldMetricsStruct = calculate_performance_metrics(y_val_fold, y_pred_inner, scores_for_positive_class_inner, positiveClassLabel, metricNames);
-                    end
-                    tempFoldMetricsArr(kInner, :) = cell2mat(struct2cell(currentInnerFoldMetricsStruct))';
+                    currentInnerFoldMetricsStruct = evaluate_pipeline_metrics( ...
+                        y_val_fold, y_pred_inner, y_scores_inner, classifier_inner.ClassNames, metricNames);
+                    tempFoldMetricsArr(kInner, :) = cellfun(@(mn) currentInnerFoldMetricsStruct.(mn), metricNames);
                 catch ME_predict_eval
                     entry = log_pipeline_message('warning', sprintf('perform_inner_cv:%s:Predict', pipelineConfig.name), ...
                         'Prediction or metric calculation failed on inner fold %d (combo %d): %s', kInner, iCombo, ME_predict_eval.message);
