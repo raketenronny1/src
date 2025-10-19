@@ -80,8 +80,14 @@ function cfg = validate_configuration(cfg)
 
     dataDir = fullfile(projectRoot, 'data');
     if ~isfolder(dataDir)
-        error('validate_configuration:MissingDataDirectory', ...
-            'Expected data directory not found at %s.', dataDir);
+        emit_warning(logger, sprintf('Expected data directory not found at %s. Creating it automatically.', dataDir), ...
+            'validate_configuration:MissingDataDirectory');
+        try
+            mkdir(dataDir);
+        catch ME
+            warning('validate_configuration:DataDirectoryCreationFailed', ...
+                'Unable to create data directory at %s: %s', dataDir, ME.message);
+        end
     end
 
     % Warn if optional output folders are missing (they will be created later)
