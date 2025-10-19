@@ -53,5 +53,7 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'outlierVarianceToModel')
         cfg.outlierVarianceToModel = 0.95;
     end
+
+    cfg = validate_configuration(cfg);
 end
 
