@@ -242,7 +242,7 @@ function cvInfo = load_cv_results(resultsDir)
     if isfield(tmp,'metricNames'); cvInfo.metricNames = tmp.metricNames; end
 end
 
-function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames)
+function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNamesEval, figuresPath, positiveClassLabel, negativeClassLabel, probeMetricNames, varargin)
 
     models = struct('name',{},'metrics',{},'modelFile',{},'scores',{},'predicted',{},'probeTable',{},'probeMetrics',{},'CV_Metrics',{},'rocFile',{});
     X = variant.X;
@@ -281,9 +281,9 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         mdlName = char(mdlName);
 
         [ypred,score] = apply_model_to_data(finalModel,X,wavenumbers);
-        [metrics, posScores] = evaluate_pipeline_metrics(y, ypred, score, finalModel.LDAModel.ClassNames, metricNamesEval);
+        [metrics, posScores] = evaluate_pipeline_metrics(y, ypred, score, finalModel.LDAModel.ClassNames, metricNamesEval, positiveClassLabel);
         if isempty(posScores) && ~isempty(score)
-            posIdx = find(finalModel.LDAModel.ClassNames==3, 1, 'first');
+            posIdx = find_positive_class_index(finalModel.LDAModel.ClassNames, positiveClassLabel);
             if ~isempty(posIdx)
                 posScores = score(:, posIdx);
             end
@@ -296,7 +296,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         entry.scores = posScores;
         entry.predicted = ypred;
 
-        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs,y,posScores,ypred,metricNamesEval);
+        [probeTable,probeMetrics] = aggregate_probe_metrics(probeIDs, y, posScores, ypred, metricNamesEval, positiveClassLabel, negativeClassLabel, probeMetricNames);
         entry.probeTable = probeTable;
         entry.probeMetrics = probeMetrics;
 
@@ -312,7 +312,7 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
         if isempty(posScores)
             Xroc = [0 1]; Yroc = [0 1]; AUC = NaN;
         else
-            [Xroc,Yroc,~,AUC] = perfcurve(y,posScores,3);
+            [Xroc,Yroc,~,AUC] = perfcurve(y,posScores,positiveClassLabel);
         end
         rocFile = fullfile(figuresPath,sprintf('ROC_%s_%s_%s.png', entry.name, modelSet.id, variant.id));
         fig = figure('Visible','off');
@@ -327,28 +327,120 @@ function models = evaluate_model_set(modelSet, variant, wavenumbers, metricNames
     end
 end
 
-function [tbl,metrics] = aggregate_probe_metrics(probeIDs,yTrue,scores,yPred,metricNames,positiveClassLabel,negativeClassLabel,probeMetricNames)
+function [tbl,metrics] = aggregate_probe_metrics(probeIDs, yTrue, scores, yPred, metricNames, positiveClassLabel, negativeClassLabel, probeMetricNames)
+
     if nargin < 8 || isempty(probeMetricNames)
         probeMetricNames = metricNames;
     end
+    if nargin < 6 || isempty(positiveClassLabel)
+        positiveClassLabel = 3;
+    end
+
+    if nargin < 7 || isempty(negativeClassLabel)
+        if isnumeric(positiveClassLabel) || islogical(positiveClassLabel)
+            negativeClassLabel = 0;
+        elseif isstring(positiveClassLabel)
+            negativeClassLabel = string(missing);
+        elseif ischar(positiveClassLabel)
+            negativeClassLabel = '';
+        elseif iscategorical(positiveClassLabel)
+            negativeClassLabel = categorical(missing);
+        else
+            negativeClassLabel = positiveClassLabel;
+        end
+    end
+
     % probeIDs should be an array of probe identifiers (numeric or string).
     probeIDs = string(probeIDs); % ensure string comparison
     probes = unique(probeIDs,'stable');
+
+    numProbes = numel(probes);
     tbl = table();
     tbl.Diss_ID = probes;
-    tbl.TrueLabel = zeros(numel(probes),1);
-    tbl.MeanProbWHO3 = zeros(numel(probes),1);
-    tbl.PredLabel = zeros(numel(probes),1);
-    for i=1:numel(probes)
-        idx = strcmp(probeIDs,probes(i));
-        tbl.TrueLabel(i) = mode(yTrue(idx));
+    tbl.MeanProbWHO3 = NaN(numProbes,1);
+
+    trueTemplate = determine_label_template(yTrue, positiveClassLabel, negativeClassLabel);
+    predTemplate = determine_label_template(yPred, negativeClassLabel, positiveClassLabel);
+    tbl.TrueLabel = repmat(trueTemplate, numProbes, 1);
+    tbl.PredLabel = repmat(predTemplate, numProbes, 1);
+
+    for i = 1:numProbes
+        idx = strcmp(probeIDs, probes(i));
+        if ~isempty(yTrue)
+            tbl.TrueLabel(i) = mode(yTrue(idx));
+        end
+
         if isempty(scores)
             tbl.MeanProbWHO3(i) = NaN;
         else
             tbl.MeanProbWHO3(i) = mean(scores(idx));
         end
-        tbl.PredLabel(i) = tbl.MeanProbWHO3(i)>0.5; % 0=>WHO1, 1=>WHO3
-        tbl.PredLabel(i) = tbl.PredLabel(i).*2+1; % convert 0->1,1->3
+
+        if ~isnan(tbl.MeanProbWHO3(i))
+            if tbl.MeanProbWHO3(i) >= 0.5
+                tbl.PredLabel(i) = positiveClassLabel;
+            else
+                tbl.PredLabel(i) = negativeClassLabel;
+            end
+        elseif ~isempty(yPred)
+            tbl.PredLabel(i) = mode(yPred(idx));
+        else
+            tbl.PredLabel(i) = negativeClassLabel;
+        end
     end
-    metrics = evaluate_pipeline_metrics(tbl.TrueLabel,tbl.PredLabel,tbl.MeanProbWHO3,[],metricNames);
+
+    metricList = probeMetricNames;
+    if isempty(metricList)
+        metricList = metricNames;
+    end
+
+    metrics = evaluate_pipeline_metrics(tbl.TrueLabel, tbl.PredLabel, tbl.MeanProbWHO3, [], metricList, positiveClassLabel);
+end
+
+function idx = find_positive_class_index(classNames, positiveClassLabel)
+    if isa(classNames, 'categorical')
+        classNames = string(classNames);
+    end
+    if iscell(classNames)
+        classNames = string(classNames);
+    end
+
+    if isnumeric(classNames)
+        idx = find(classNames == positiveClassLabel, 1, 'first');
+        return;
+    end
+
+    classStr = string(classNames);
+    posStr = string(positiveClassLabel);
+    idx = find(classStr == posStr, 1, 'first');
+    if isempty(idx) && all(~isnan(str2double(classStr)))
+        numericClasses = str2double(classStr);
+        idx = find(numericClasses == positiveClassLabel, 1, 'first');
+    end
+end
+
+function template = determine_label_template(values, primaryFallback, secondaryFallback)
+    if nargin < 2
+        primaryFallback = [];
+    end
+    if nargin < 3
+        secondaryFallback = [];
+    end
+
+    if ~isempty(values)
+        template = values(1);
+        return;
+    end
+
+    if ~isempty(primaryFallback)
+        template = primaryFallback;
+        return;
+    end
+
+    if ~isempty(secondaryFallback)
+        template = secondaryFallback;
+        return;
+    end
+
+    template = 0;
 end
