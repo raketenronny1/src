@@ -95,6 +95,31 @@ run('src/run_phase3_final_evaluation.m')
 
 Models are stored in `models/Phase3` and metrics in `results/Phase3`.
 
+Use `run_phase3_compare_models.m` to perform a paired t-test between two
+saved Phase 3 model outputs (e.g. full test set vs. outlier-filtered). The
+script loads the latest `*_Phase3_ParallelComparisonResults.mat` file by
+default and prints a summary of the statistical comparison. It returns the
+structured result from `helper_functions/compare_results.m` for further
+inspection.
+
+```matlab
+% Compare the first two models in the default variant/model-set combination
+summary = run_phase3_compare_models(struct());
+
+% Explicitly pick models by name and use per-spectrum probabilities
+cfg = struct('modelA', 'MRMR_LDA', ...
+             'modelB', 'MRMR_LDA_Cleaned', ...
+             'mode', 'spectra', ...
+             'alpha', 0.01);
+summary = run_phase3_compare_models(cfg);
+
+% Call the helper directly when you already have result structs loaded
+S = load('results/Phase3/20250101_Phase3_ParallelComparisonResults.mat');
+a = S.resultsByVariant(1).modelSets(1).models(1);
+b = S.resultsByVariant(1).modelSets(1).models(2);
+compare_results(a, b, struct('mode', 'probe', 'labels', ["Baseline" "Filtered"]));
+```
+
 ### Phase 4 – Feature interpretation
 
 Interpret the trained model by plotting LDA coefficients for the selected wavenumbers and generating mean spectra visualisations. Statistical p-value calculations were removed to streamline the phase.
