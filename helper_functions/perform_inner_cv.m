@@ -214,8 +214,11 @@ function [bestHyperparams, bestOverallPerfMetrics, diagnostics] = perform_inner_
                     end
                 case 'pca'
                     if size(X_train_p,2) > 0 && size(X_train_p,1) > 1 && size(X_train_p,1) > size(X_train_p,2) % N > P condition for standard PCA
-                        try 
-                            [coeff_i, score_train_i, ~, ~, explained_i, mu_pca_i] = pca(X_train_p);
+                        try
+                            cacheConfig = struct('signature', struct( ...
+                                'context', 'perform_inner_cv', ...
+                                'hyperparams', currentHyperparams));
+                            [coeff_i, score_train_i, ~, ~, explained_i, mu_pca_i] = cached_pca(X_train_p, cacheConfig);
                             numComponents_i = 0;
                             if isfield(currentHyperparams, 'pcaVarianceToExplain')
                                 cumulativeExplained_i = cumsum(explained_i);

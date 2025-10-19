@@ -69,7 +69,10 @@ function [model, selectedIdx, selectedWn, diagnostics] = train_final_pipeline_mo
             model.PCAMu = [];
             if size(Xp,2) > 0 && size(Xp,1) > 1 && size(Xp,1) > size(Xp,2)
                 try
-                    [coeff, score, ~, ~, explained, mu] = pca(Xp);
+                    cacheConfig = struct('signature', struct( ...
+                        'context', 'train_final_pipeline_model', ...
+                        'hyperparams', hyperparams));
+                    [coeff, score, ~, ~, explained, mu] = cached_pca(Xp, cacheConfig);
                     if isfield(hyperparams, 'pcaVarianceToExplain')
                         cumExp = cumsum(explained);
                         nComp = find(cumExp >= hyperparams.pcaVarianceToExplain*100, 1, 'first');
