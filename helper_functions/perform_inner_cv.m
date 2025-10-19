@@ -155,95 +155,18 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                 continue;
             end
 
-            current_w_fold = wavenumbers_original;
-            X_train_p = X_train_fold; X_val_p = X_val_fold; 
+            [X_train_p, current_w_fold, preprocessInfo] = apply_pipeline_preprocessing( ...
+                X_train_fold, wavenumbers_original, currentHyperparams);
+            X_val_p = apply_pipeline_preprocessing( ...
+                X_val_fold, wavenumbers_original, currentHyperparams, preprocessInfo);
 
-            if currentHyperparams.binningFactor > 1
-                [X_train_p, current_w_fold] = bin_spectra(X_train_fold, wavenumbers_original, currentHyperparams.binningFactor);
-                [X_val_p, ~] = bin_spectra(X_val_fold, wavenumbers_original, currentHyperparams.binningFactor);
-            end
-
-            selectedFcIdx_in_current_w = 1:size(X_train_p, 2); 
-
-            switch lower(pipelineConfig.feature_selection_method)
-                case 'fisher'
-                    % --- FIX STARTS HERE ---
-                    % This block is simplified to only handle `fisherFeaturePercent`.
-                    if isfield(currentHyperparams, 'fisherFeaturePercent')
-                        numFeat = ceil(currentHyperparams.fisherFeaturePercent * size(X_train_p,2));
-                    else
-                        % This error indicates a mismatch between the pipeline definition
-                        % and the logic here. It's better to fail fast than use wrong logic.
-                        error('perform_inner_cv:MissingHyperparameter', ...
-                              'Fisher pipeline expects "fisherFeaturePercent" but it was not found.');
-                    end
-                    numFeat = min(numFeat, size(X_train_p,2));
-                    % --- FIX ENDS HERE ---
-
-                    if numFeat > 0 && size(X_train_p,1)>1 && length(unique(y_train_fold))==2
-                        fisherRatios_inner = calculate_fisher_ratio(X_train_p, y_train_fold);
-                        [~, sorted_idx_inner] = sort(fisherRatios_inner, 'descend', 'MissingPlacement','last');
-                        selectedFcIdx_in_current_w = sorted_idx_inner(1:numFeat);
-                    end
-                case 'pca'
-                    if size(X_train_p,2) > 0 && size(X_train_p,1) > 1 && size(X_train_p,1) > size(X_train_p,2) % N > P condition for standard PCA
-                        try 
-                            [coeff_i, score_train_i, ~, ~, explained_i, mu_pca_i] = pca(X_train_p);
-                            numComponents_i = 0;
-                            if isfield(currentHyperparams, 'pcaVarianceToExplain')
-                                cumulativeExplained_i = cumsum(explained_i);
-                                idx_pc = find(cumulativeExplained_i >= currentHyperparams.pcaVarianceToExplain*100, 1, 'first');
-                                if isempty(idx_pc), numComponents_i = size(coeff_i,2); else, numComponents_i = idx_pc; end
-                            else 
-                                numComponents_i = min(currentHyperparams.numPCAComponents, size(coeff_i,2));
-                            end
-                            
-                            if numComponents_i > 0 && size(score_train_i,2) >= numComponents_i
-                                X_train_p = score_train_i(:, 1:numComponents_i);
-                                X_val_p = (X_val_p - mu_pca_i) * coeff_i(:, 1:numComponents_i);
-                                selectedFcIdx_in_current_w = 1:numComponents_i; 
-                            end
-                        catch ME_pca_inner
-                            % PCA failed, use original features for this combo
-                        end
-                    end
-                case 'mrmr'
-                    numFeat = ceil(currentHyperparams.mrmrFeaturePercent * size(X_train_p,2));
-                    numFeat = min(numFeat, size(X_train_p,2));
-
-                    if numFeat <=0 || size(X_train_p,2) == 0 
-                        selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
-                    elseif ~(size(X_train_p,1)>1 && length(unique(y_train_fold))==2 && exist('fscmrmr','file'))
-                        selectedFcIdx_in_current_w = 1:size(X_train_p,2); % Fallback to all
-                    else
-                        try
-                            y_train_fold_cat = categorical(y_train_fold);
-                            if size(X_train_p,2) == 0 % No features in input X
-                                selectedFcIdx_in_current_w = []; 
-                            else
-                                [ranked_indices_inner, ~] = fscmrmr(X_train_p, y_train_fold_cat); 
-                                actual_num_to_take_inner = min(numFeat, length(ranked_indices_inner));
-                                if actual_num_to_take_inner > 0
-                                    selectedFcIdx_in_current_w = ranked_indices_inner(1:actual_num_to_take_inner);
-                                else 
-                                    selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
-                                end
-                            end
-                        catch ME_mrmr_inner
-                             fprintf('ERROR MRMR (perform_inner_cv): %s. Using all %d features for this fold.\n', ME_mrmr_inner.message, size(X_train_p,2)); 
-                             selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
-                        end
-                    end
-            end
-            
-            if isempty(selectedFcIdx_in_current_w) && size(X_train_p, 2) > 0 
-                selectedFcIdx_in_current_w = 1:size(X_train_p, 2); 
-            elseif isempty(X_train_p) || size(X_train_p,2) == 0 
+            if isempty(X_train_p) || size(X_train_p,2) == 0
                 tempFoldMetricsArr(kInner, :) = NaN; continue;
             end
 
-            X_fs_train_fold = X_train_p(:, selectedFcIdx_in_current_w);
-            X_fs_val_fold   = X_val_p(:, selectedFcIdx_in_current_w);
+            [X_fs_train_fold, selectionInfo] = fit_pipeline_feature_selection( ...
+                X_train_p, y_train_fold, pipelineConfig, currentHyperparams, current_w_fold);
+            X_fs_val_fold = apply_pipeline_feature_selection(X_val_p, selectionInfo);
 
             classifier_inner = [];
             if isempty(X_fs_train_fold) || size(X_fs_train_fold,1)<2 || length(unique(y_train_fold))<2
@@ -265,27 +188,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
             if ~isempty(classifier_inner) && ~isempty(X_fs_val_fold) && ~isempty(y_val_fold)
                 try
                     [y_pred_inner, y_scores_inner] = predict(classifier_inner, X_fs_val_fold);
-                    positiveClassLabel = 3; 
-                    classOrder_inner = classifier_inner.ClassNames;
-                    positiveClassColIdx_inner = [];
-                    if isnumeric(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    elseif iscategorical(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(string(classOrder_inner)) == positiveClassLabel);
-                    elseif iscellstr(classOrder_inner) && isnumeric(positiveClassLabel)
-                        positiveClassColIdx_inner = find(str2double(classOrder_inner) == positiveClassLabel);
-                    else 
-                        positiveClassColIdx_inner = find(classOrder_inner == positiveClassLabel);
-                    end
-                    
-                    if isempty(positiveClassColIdx_inner) || ( ~isempty(positiveClassColIdx_inner) && (max(positiveClassColIdx_inner) > size(y_scores_inner,2)) )
-                        currentInnerFoldMetricsStruct = struct();
-                        for iMet=1:length(metricNames), currentInnerFoldMetricsStruct.(metricNames{iMet}) = NaN; end
-                    else
-                        scores_for_positive_class_inner = y_scores_inner(:, positiveClassColIdx_inner);
-                        currentInnerFoldMetricsStruct = calculate_performance_metrics(y_val_fold, y_pred_inner, scores_for_positive_class_inner, positiveClassLabel, metricNames);
-                    end
-                    tempFoldMetricsArr(kInner, :) = cell2mat(struct2cell(currentInnerFoldMetricsStruct))';
+                    currentInnerFoldMetricsStruct = evaluate_pipeline_metrics( ...
+                        y_val_fold, y_pred_inner, y_scores_inner, classifier_inner.ClassNames, metricNames);
+                    tempFoldMetricsArr(kInner, :) = cellfun(@(mn) currentInnerFoldMetricsStruct.(mn), metricNames);
                 catch ME_predict_eval
                     tempFoldMetricsArr(kInner, :) = NaN;
                 end

@@ -18,16 +18,11 @@ if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
 %% Load base training data
-trainTablePath = fullfile(dataPath,'data_table_train.mat');
-if ~isfile(trainTablePath)
-    error('Training table not found: %s', trainTablePath);
-end
-load(trainTablePath,'dataTableTrain');
-load(fullfile(dataPath,'wavenumbers.mat'),'wavenumbers_roi');
-if iscolumn(wavenumbers_roi); wavenumbers_roi = wavenumbers_roi'; end
-
-[X_all, y_all, ~, probeIDs_all] = flatten_spectra_for_pca( ...
-    dataTableTrain, length(wavenumbers_roi));
+trainData = load_dataset_split(dataPath, 'train');
+wavenumbers_roi = trainData.wavenumbers;
+X_all = trainData.X;
+y_all = trainData.y;
+probeIDs_all = trainData.probeIDs;
 
 %% Build dataset variants
 datasetVariants = create_dataset_variants(X_all, y_all, probeIDs_all, cfg);
@@ -180,9 +175,8 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             outerBestHyper{k}=bestHyper;
             [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
             [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(finalModel.LDAModel.ClassNames==3);
-            m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
-            outerMetrics(k,:)=cell2mat(struct2cell(m))';
+            m = evaluate_pipeline_metrics(y_te, ypred, score, finalModel.LDAModel.ClassNames, metricNames);
+            outerMetrics(k,:) = cellfun(@(mn) m.(mn), metricNames);
         end
         res=struct();
         res.pipelineConfig=pipe;

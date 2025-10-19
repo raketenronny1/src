@@ -34,96 +34,26 @@ function [model, selectedIdx, selectedWn] = train_final_pipeline_model(X, y, wav
         wavenumbers = wavenumbers';
     end
 
-    Xp = X; currentWn = wavenumbers;
+    [Xp, currentWn, preprocessInfo] = apply_pipeline_preprocessing(X, wavenumbers, hyperparams);
+    model.binningFactor = preprocessInfo.binningFactor;
 
-    % --- Binning ---
-    model.binningFactor = 1;
-    if isfield(hyperparams, 'binningFactor') && hyperparams.binningFactor > 1
-        [Xp, currentWn] = bin_spectra(X, wavenumbers, hyperparams.binningFactor);
-        model.binningFactor = hyperparams.binningFactor;
-    end
-
-    % --- Feature selection ---
+    [Xfs, selectionInfo] = fit_pipeline_feature_selection(Xp, y, pipelineConfig, hyperparams, currentWn);
     model.featureSelectionMethod = pipelineConfig.feature_selection_method;
-    switch lower(pipelineConfig.feature_selection_method)
-        case 'fisher'
-            if isfield(hyperparams, 'fisherFeaturePercent')
-                numFeat = ceil(hyperparams.fisherFeaturePercent * size(Xp,2));
-            else
-                numFeat = size(Xp,2);
-            end
-            numFeat = min(numFeat, size(Xp,2));
-            if numFeat > 0 && size(Xp,1) > 1 && length(unique(y)) == 2
-                fr = calculate_fisher_ratio(Xp, y);
-                [~, sortIdx] = sort(fr, 'descend', 'MissingPlacement','last');
-                selectedIdx = sortIdx(1:numFeat);
-            else
-                selectedIdx = 1:size(Xp,2);
-            end
-            Xfs = Xp(:, selectedIdx);
-            selectedWn = currentWn(selectedIdx);
-            model.selectedFeatureIndices = selectedIdx;
+    selectedIdx = selectionInfo.selectedFeatureIndices;
+    selectedWn = selectionInfo.selectedWavenumbers;
 
+    switch lower(model.featureSelectionMethod)
         case 'pca'
-            Xfs = Xp;
+            model.PCACoeff = selectionInfo.PCACoeff;
+            model.PCAMu = selectionInfo.PCAMu;
+            model.selectedFeatureIndices = selectionInfo.selectedFeatureIndices;
+        otherwise
             model.PCACoeff = [];
             model.PCAMu = [];
-            if size(Xp,2) > 0 && size(Xp,1) > 1 && size(Xp,1) > size(Xp,2)
-                try
-                    [coeff, score, ~, ~, explained, mu] = pca(Xp);
-                    if isfield(hyperparams, 'pcaVarianceToExplain')
-                        cumExp = cumsum(explained);
-                        nComp = find(cumExp >= hyperparams.pcaVarianceToExplain*100, 1, 'first');
-                        if isempty(nComp); nComp = size(coeff,2); end
-                    elseif isfield(hyperparams,'numPCAComponents')
-                        nComp = min(hyperparams.numPCAComponents, size(coeff,2));
-                    else
-                        nComp = size(coeff,2);
-                    end
-                    coeff = coeff(:,1:nComp); score = score(:,1:nComp);
-                    model.PCACoeff = coeff;
-                    model.PCAMu = mu;
-                    Xfs = score;
-                    selectedIdx = 1:nComp;
-                catch
-                    % fallback to using original features
-                    selectedIdx = 1:size(Xp,2);
-                    Xfs = Xp;
-                end
-            else
-                selectedIdx = 1:size(Xp,2);
+            model.selectedFeatureIndices = selectionInfo.selectedFeatureIndices;
+            if isempty(selectedWn) && ~isempty(currentWn)
+                selectedWn = currentWn(model.selectedFeatureIndices);
             end
-            selectedWn = [];
-            model.selectedFeatureIndices = selectedIdx; % not used but keep for completeness
-
-        case 'mrmr'
-            if isfield(hyperparams, 'mrmrFeaturePercent')
-                numFeat = ceil(hyperparams.mrmrFeaturePercent * size(Xp,2));
-            else
-                numFeat = size(Xp,2);
-            end
-            numFeat = min(numFeat, size(Xp,2));
-            if numFeat>0 && size(Xp,1)>1 && length(unique(y))==2 && exist('fscmrmr','file')
-                try
-                    ycat = categorical(y);
-                    [idx,~] = fscmrmr(Xp, ycat);
-                    numFeat = min(numFeat, length(idx));
-                    selectedIdx = idx(1:numFeat);
-                catch
-                    selectedIdx = 1:size(Xp,2);
-                end
-            else
-                selectedIdx = 1:size(Xp,2);
-            end
-            Xfs = Xp(:,selectedIdx);
-            selectedWn = currentWn(selectedIdx);
-            model.selectedFeatureIndices = selectedIdx;
-
-        otherwise
-            selectedIdx = 1:size(Xp,2);
-            Xfs = Xp;
-            selectedWn = currentWn(selectedIdx);
-            model.selectedFeatureIndices = selectedIdx;
     end
 
     % --- Train classifier ---
