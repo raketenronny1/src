@@ -141,6 +141,32 @@ run('src/plotting/visualize_phase1.m')
 run('src/plotting/visualize_binning_effects.m')
 ```
 
+
+### Exporting cross-phase summaries
+
+After running Phases 2 and 3 you can convert the MATLAB structs into flat CSV
+and JSON artefacts with:
+
+```matlab
+run('src/data_management/export_phase_results_to_csv_json.m')
+```
+
+The helper inspects the latest Phase 2 and Phase 3 result files (or accepts
+explicit paths via the optional configuration struct) and writes the following
+exports under `results/Exports/`:
+
+- `phase2_pipeline_leaderboard.csv` – mean cross-validation metrics and
+  hyperparameter summaries for every trained pipeline.
+- `phase3_variant_model_metrics.csv` – test-set metrics by variant, model set
+  and pipeline, including cross-validation references when available.
+- `phase3_best_models.csv` – one-row-per-variant summary of the top F2 model.
+- `phase_metrics_bundle.json` – machine-friendly bundle that preserves the
+  nested structure, including per-fold scores, probe aggregates and relative
+  paths back to the source MAT files.
+
+Provide the optional `cfg.phase2ResultsFile`, `cfg.phase3ResultsFile` or
+`cfg.exportRoot` fields to override the auto-discovery defaults.
+
 ## Cleaning Outputs
 
 Files in `results/`, `models/`, and `figures/` can accumulate across runs. Periodically remove or archive old outputs to keep the repository tidy. The `cleanup_results` helper automates this process.
