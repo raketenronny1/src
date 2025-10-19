@@ -152,6 +152,23 @@ function testVariants = build_test_variants(X_test, y_test, probeIDs_test, cfg)
     end
 end
 
+function [seedValue, sourceField] = resolve_phase3_seed(cfg)
+
+    seedValue = [];
+    sourceField = '';
+
+    if isfield(cfg,'randomSeedPhase3') && ~isempty(cfg.randomSeedPhase3)
+        seedValue = cfg.randomSeedPhase3;
+        sourceField = 'randomSeedPhase3';
+        return;
+    end
+
+    if isfield(cfg,'randomSeed') && ~isempty(cfg.randomSeed)
+        seedValue = cfg.randomSeed;
+        sourceField = 'randomSeed';
+    end
+end
+
 function modelSets = discover_model_sets(modelsPathP2, resultsPathP2)
 
     modelSets = struct('id',{},'description',{},'modelsDir',{},'resultsDir',{},'modelFiles',{},'cvData',{},'pipelines',{},'metricNames',{});

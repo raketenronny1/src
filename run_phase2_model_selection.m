@@ -35,6 +35,18 @@ modelsPathRoot = P.modelsPath;
 if ~isfolder(resultsPathRoot); mkdir(resultsPathRoot); end
 if ~isfolder(modelsPathRoot); mkdir(modelsPathRoot); end
 
+% Configure random seed for reproducibility
+phaseLogger = [];
+if isfield(cfg,'logger'); phaseLogger = cfg.logger; end
+[seedPhase2, seedSourcePhase2] = resolve_random_seed(cfg, 'randomSeedPhase2');
+rngInfoPhase2 = set_random_seed(seedPhase2, 'Logger', phaseLogger, ...
+    'Context', 'Phase 2 nested cross-validation');
+rngMetadataBase = struct('phase','Phase2', ...
+    'seedSource', seedSourcePhase2, ...
+    'seedValueRequested', seedPhase2, ...
+    'seedValueApplied', rngInfoPhase2.appliedSeed, ...
+    'rngInfo', rngInfoPhase2);
+
 %% Load base training data
 trainData = load_dataset_split(dataPath, 'train');
 wavenumbers_roi = trainData.wavenumbers;
@@ -95,6 +107,10 @@ for d = 1:numel(datasetsToProcess)
     else
         resultsFile = fullfile(resultsPath, sprintf('%s_Phase2_AllPipelineResults.mat', dateStr));
     end
+
+    metadata = rngMetadataBase;
+    metadata.datasetID = ds.id;
+    metadata.generatedOn = datetime('now');
 
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
         'numOuterFolds','numInnerFolds','savedModels','ds');
