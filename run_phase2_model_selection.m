@@ -1,4 +1,4 @@
-function run_phase2_model_selection(cfg)
+function run_phase2_model_selection(cfgInput)
 %RUN_PHASE2_MODEL_SELECTION
 %
 % Model and feature selection with optional outlier removal.
@@ -6,15 +6,29 @@ function run_phase2_model_selection(cfg)
 % outliers removed.
 % Accepts either a configuration struct or a YAML file path.
 
-if nargin < 1, cfg = struct(); end
-
 helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
 if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
     addpath(helperPath);
 end
 
-cfg = configure_cfg(cfg);
+if nargin < 1 || isempty(cfgInput)
+    cfgArgs = {};
+elseif isstruct(cfgInput)
+    cfgArgs = {cfgInput};
+elseif isstring(cfgInput) || ischar(cfgInput)
+    cfgArgs = {'configFile', char(cfgInput)};
+else
+    error('run_phase2_model_selection:InvalidInput', ...
+        ['Unsupported configuration input. Provide a struct, a file path, or leave empty ', ...
+         'to use defaults. Troubleshooting tip: verify the caller arguments.']);
+end
+
+cfg = configure_cfg(cfgArgs{:});
 cfg = validate_configuration(cfg);
+
+if ~isfield(cfg, 'verbose') || isempty(cfg.verbose)
+    cfg.verbose = true;
+end
 
 runConfig = load_run_configuration(cfg.projectRoot, cfg);
 phase2Config = runConfig.phase2;
@@ -117,7 +131,9 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath, 'Verbose', cfg.verbose);
+        numInnerFolds, resultsPath, modelsPath, ...
+        'Verbose', cfg.verbose, ...
+        'PositiveClassLabel', positiveClassLabel);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -134,6 +150,8 @@ for d = 1:numel(datasetsToProcess)
     save(resultsFile,'resultsPerPipeline','pipelines','metricNames', ...
         'numOuterFolds','numInnerFolds','savedModels','ds');
     log_message('info', 'Results for %s saved to %s', ds.id, resultsFile);
+
+    datasetReporter.update(1, sprintf('%s complete', ds.description));
 end
 end
 
@@ -220,8 +238,10 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
     p = inputParser();
     addParameter(p, 'Verbose', true, @(v) islogical(v) || isnumeric(v));
+    addParameter(p, 'PositiveClassLabel', 3, @(v) isnumeric(v) && isscalar(v));
     parse(p, varargin{:});
     verbose = logical(p.Results.Verbose);
+    positiveClassLabel = p.Results.PositiveClassLabel;
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -245,7 +265,8 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
-        fprintf('\nEvaluating pipeline: %s\n', char(pipe.Name));
+        pipelineName = char(pipe.Name);
+        fprintf('\nEvaluating pipeline: %s\n', pipelineName);
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
         innerDiagnosticsPerFold = cell(numOuterFolds,1);
@@ -257,10 +278,13 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~,innerDiagnostics] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            [bestHyper,~,innerDiagnostics] = perform_inner_cv( ...
+                X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds, ...
+                metricNames, positiveClassLabel, 'Verbose', verbose, ...
+                'ProgressLabel', sprintf('Inner CV - %s (fold %d)', pipelineName, k));
             innerDiagnosticsPerFold{k} = innerDiagnostics;
             if strcmpi(innerDiagnostics.status, 'error')
-                log_pipeline_message('error', sprintf('run_phase2:innerCV:%s', pipe.name), ...
+                log_pipeline_message('error', sprintf('run_phase2:innerCV:%s', pipelineName), ...
                     'Inner CV failed on outer fold %d. Marking fold as invalid.', k);
                 outerBestHyper{k} = struct();
                 continue;
@@ -269,8 +293,14 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             outerBestHyper{k}=bestHyper;
             [finalModel,~,~, foldTrainDiagnostics] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
             trainingDiagnosticsPerFold{k} = foldTrainDiagnostics;
-            if strcmpi(foldTrainDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
-                log_pipeline_message('error', sprintf('run_phase2:train:%s', pipe.name), ...
+            hasTrainingError = isstruct(foldTrainDiagnostics) && isfield(foldTrainDiagnostics,'status') && ...
+                strcmpi(foldTrainDiagnostics.status,'error');
+            isValidModel = isa(finalModel,'pipelines.TrainedClassificationPipeline');
+            if ~isValidModel
+                isValidModel = isstruct(finalModel) && isfield(finalModel,'LDAModel') && ~isempty(finalModel.LDAModel);
+            end
+            if hasTrainingError || ~isValidModel
+                log_pipeline_message('error', sprintf('run_phase2:train:%s', pipelineName), ...
                     'Failed to train outer fold %d model. Skipping metrics.', k);
                 outerMetrics(k,:) = NaN;
                 outerBestHyper{k} = struct();
@@ -278,12 +308,11 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             end
 
             try
-                [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-                posIdx=find(finalModel.LDAModel.ClassNames==3);
-                m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
-                outerMetrics(k,:)=cell2mat(struct2cell(m))';
+                [ypred,score,classNames] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+                metricsStruct = evaluate_pipeline_metrics(y_te, ypred, score, classNames, metricNames, positiveClassLabel);
+                outerMetrics(k,:)=cellfun(@(mn) metricsStruct.(mn), metricNames);
             catch ME_outer_eval
-                log_pipeline_message('warning', sprintf('run_phase2:evaluation:%s', pipe.name), ...
+                log_pipeline_message('warning', sprintf('run_phase2:evaluation:%s', pipelineName), ...
                     'Evaluation failed on outer fold %d: %s', k, ME_outer_eval.message);
                 outerMetrics(k,:) = NaN;
             end
@@ -299,7 +328,7 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
         aggHyper=aggregate_best_hyperparams(outerBestHyper);
         if isempty(fieldnames(aggHyper))
-            log_pipeline_message('error', sprintf('run_phase2:aggregate:%s', pipe.name), ...
+            log_pipeline_message('error', sprintf('run_phase2:aggregate:%s', pipelineName), ...
                 'No valid hyperparameters aggregated. Skipping final model training.');
             finalModel = struct();
             selectedIdx = [];
@@ -312,12 +341,18 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             finalDiagnostics.context = 'train_final_pipeline_model';
         else
             [finalModel,selectedIdx,selectedWn,finalDiagnostics]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
-            if strcmpi(finalDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
-                log_pipeline_message('error', sprintf('run_phase2:finalTrain:%s', pipe.name), ...
+            hasFinalError = isstruct(finalDiagnostics) && isfield(finalDiagnostics,'status') && ...
+                strcmpi(finalDiagnostics.status,'error');
+            isValidFinalModel = isa(finalModel,'pipelines.TrainedClassificationPipeline');
+            if ~isValidFinalModel
+                isValidFinalModel = isstruct(finalModel) && isfield(finalModel,'LDAModel') && ~isempty(finalModel.LDAModel);
+            end
+            if hasFinalError || ~isValidFinalModel
+                log_pipeline_message('error', sprintf('run_phase2:finalTrain:%s', pipelineName), ...
                     'Failed to train final model. Model will not be saved.');
                 modelFile = '';
             else
-                modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
+                modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipelineName));
                 save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds','finalDiagnostics');
             end
         end
@@ -326,7 +361,7 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
 
         resultsPerPipeline{iPipe}=res;
         savedModels{iPipe}=modelFile;
-        pipelineReporter.update(1, sprintf('%s complete', pipe.name));
+        pipelineReporter.update(1, sprintf('%s complete', pipelineName));
     end
 end
 

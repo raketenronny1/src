@@ -113,6 +113,9 @@ function cfg = configure_cfg(varargin)
         'outlierVarianceToModel', 0.95 ...
     );
     cfg = merge_missing(cfg, defaults);
+
+    % Final validation pass before returning to callers
+    cfg = validate_configuration(cfg);
 end
 
 function root = resolve_project_root(existingCfg)
@@ -284,7 +287,5 @@ function value = parse_scalar(text)
     else
         value = text;
     end
-
-    cfg = validate_configuration(cfg);
 end
 
