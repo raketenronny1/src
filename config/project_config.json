@@ -1,0 +1,57 @@
+{
+  "classLabels": {
+    "positive": 3,
+    "negative": 1
+  },
+  "metricPresets": {
+    "default": [
+      "Accuracy",
+      "Sensitivity_WHO3",
+      "Specificity_WHO1",
+      "PPV_WHO3",
+      "NPV_WHO1",
+      "F1_WHO3",
+      "F2_WHO3",
+      "AUC"
+    ],
+    "phase2_model_selection": [
+      "Accuracy",
+      "Sensitivity_WHO3",
+      "Specificity_WHO1",
+      "PPV_WHO3",
+      "NPV_WHO1",
+      "F1_WHO3",
+      "F2_WHO3",
+      "AUC"
+    ],
+    "phase3_final_evaluation": [
+      "Accuracy",
+      "Sensitivity_WHO3",
+      "Specificity_WHO1",
+      "PPV_WHO3",
+      "NPV_WHO1",
+      "F1_WHO3",
+      "F2_WHO3",
+      "AUC"
+    ],
+    "probe_level_summary": [
+      "Accuracy",
+      "Sensitivity_WHO3",
+      "Specificity_WHO1",
+      "PPV_WHO3",
+      "NPV_WHO1",
+      "F1_WHO3",
+      "F2_WHO3",
+      "AUC"
+    ]
+  },
+  "phase2": {
+    "outerFolds": 5,
+    "innerFolds": 3,
+    "metricsPreset": "phase2_model_selection"
+  },
+  "phase3": {
+    "metricsPreset": "phase3_final_evaluation",
+    "probeMetricsPreset": "probe_level_summary"
+  }
+}
