@@ -187,6 +187,8 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
         fprintf('\nEvaluating pipeline: %s\n', char(pipe.Name));
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
+        innerDiagnosticsPerFold = cell(numOuterFolds,1);
+        trainingDiagnosticsPerFold = cell(numOuterFolds,1);
         for k=1:numOuterFolds
             trainIdx = training(outerCV,k);
             testIdx  = test(outerCV,k);
@@ -194,29 +196,72 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
             testMask  = ismember(groupIdx, find(testIdx));
             X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
             X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
-            outerBestHyper{k}=bestHyper;
-            [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
-            [ypred,score,classNames] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(classNames==3,1);
-            if isempty(posIdx)
-                warning('Positive class not found in predictions for pipeline %s.', pipe.Name);
+            [bestHyper,~,innerDiagnostics] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+            innerDiagnosticsPerFold{k} = innerDiagnostics;
+            if strcmpi(innerDiagnostics.status, 'error')
+                log_pipeline_message('error', sprintf('run_phase2:innerCV:%s', pipe.name), ...
+                    'Inner CV failed on outer fold %d. Marking fold as invalid.', k);
+                outerBestHyper{k} = struct();
                 continue;
             end
-            m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
-            outerMetrics(k,:)=cell2mat(struct2cell(m))';
+
+            outerBestHyper{k}=bestHyper;
+            [finalModel,~,~, foldTrainDiagnostics] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
+            trainingDiagnosticsPerFold{k} = foldTrainDiagnostics;
+            if strcmpi(foldTrainDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
+                log_pipeline_message('error', sprintf('run_phase2:train:%s', pipe.name), ...
+                    'Failed to train outer fold %d model. Skipping metrics.', k);
+                outerMetrics(k,:) = NaN;
+                outerBestHyper{k} = struct();
+                continue;
+            end
+
+            try
+                [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+                posIdx=find(finalModel.LDAModel.ClassNames==3);
+                m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
+                outerMetrics(k,:)=cell2mat(struct2cell(m))';
+            catch ME_outer_eval
+                log_pipeline_message('warning', sprintf('run_phase2:evaluation:%s', pipe.name), ...
+                    'Evaluation failed on outer fold %d: %s', k, ME_outer_eval.message);
+                outerMetrics(k,:) = NaN;
+            end
         end
         res=struct();
         res.pipelineConfig=pipe;
         res.outerFoldMetrics_raw=outerMetrics;
         res.outerFoldMetrics_mean=nanmean(outerMetrics,1);
         res.outerFoldBestHyperparams=outerBestHyper;
+        res.outerFoldDiagnostics = struct();
+        res.outerFoldDiagnostics.inner = innerDiagnosticsPerFold;
+        res.outerFoldDiagnostics.training = trainingDiagnosticsPerFold;
 
         aggHyper=aggregate_best_hyperparams(outerBestHyper);
-        [finalModel,selectedIdx,selectedWn]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
-        modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),char(pipe.Name)));
-        save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds');
+        if isempty(fieldnames(aggHyper))
+            log_pipeline_message('error', sprintf('run_phase2:aggregate:%s', pipe.name), ...
+                'No valid hyperparameters aggregated. Skipping final model training.');
+            finalModel = struct();
+            selectedIdx = [];
+            selectedWn = [];
+            modelFile = '';
+            finalDiagnostics = struct();
+            finalDiagnostics.status = 'error';
+            finalDiagnostics.entries = struct('timestamp',{},'level',{},'context',{},'message',{});
+            finalDiagnostics.errors = {};
+            finalDiagnostics.context = 'train_final_pipeline_model';
+        else
+            [finalModel,selectedIdx,selectedWn,finalDiagnostics]=train_final_pipeline_model(X,y,wavenumbers_roi,pipe,aggHyper);
+            if strcmpi(finalDiagnostics.status,'error') || ~isfield(finalModel,'LDAModel') || isempty(finalModel)
+                log_pipeline_message('error', sprintf('run_phase2:finalTrain:%s', pipe.name), ...
+                    'Failed to train final model. Model will not be saved.');
+                modelFile = '';
+            else
+                modelFile=fullfile(modelsPath,sprintf('%s_Phase2_%s_Model.mat',string(datetime('now','Format','yyyyMMdd')),pipe.name));
+                save(modelFile,'finalModel','aggHyper','selectedIdx','selectedWn','ds','finalDiagnostics');
+            end
+        end
         res.finalModelFile=modelFile;
+        res.finalModelDiagnostics = finalDiagnostics;
 
         resultsPerPipeline{iPipe}=res;
         savedModels{iPipe}=modelFile;
