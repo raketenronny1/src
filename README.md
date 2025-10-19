@@ -37,6 +37,7 @@ The core scripts rely on MATLAB data files stored under `data/`:
 - MATLAB R2021b or newer
 - **Statistics and Machine Learning Toolbox** (for LDA, cross-validation and `fscmrmr`)
 - **Signal Processing Toolbox** (for spectral smoothing via Savitzky–Golay filtering)
+- *Optional:* **Parallel Computing Toolbox** (to accelerate outer cross-validation loops)
 This repository includes a lightweight spider plot helper function for generating radar charts; no external downloads are required.
 
 ## Configuration helper
@@ -49,8 +50,14 @@ accepts name/value pairs for overrides.
 cfg = configure_cfg();
 cfg.useOutlierRemoval = true;   % set false to keep all training data
 cfg.parallelOutlierComparison = true; % evaluate both cleaned and full datasets in parallel
+cfg.enableParallelOuterCV = true; % override auto-detection of parallel outer CV
 run('src/main.m')
 ```
+
+`configure_cfg` enables parallel outer cross-validation automatically when the
+Parallel Computing Toolbox is installed and licensed. Set
+`cfg.enableParallelOuterCV = false` to force serial execution or leave the
+field unset to accept the auto-detected default.
 
 ## Analysis pipeline
 

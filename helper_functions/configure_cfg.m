@@ -45,6 +45,14 @@ function cfg = configure_cfg(varargin)
     if ~isfield(cfg,'parallelOutlierComparison')
         cfg.parallelOutlierComparison = true;
     end
+    if ~isfield(cfg,'enableParallelOuterCV')
+        if exist('get_parallel_environment_info','file')
+            parInfo = get_parallel_environment_info();
+            cfg.enableParallelOuterCV = parInfo.isAvailable;
+        else
+            cfg.enableParallelOuterCV = false;
+        end
+    end
     if ~isfield(cfg,'outlierAlpha')
         cfg.outlierAlpha = 0.01;
     end

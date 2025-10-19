@@ -57,6 +57,25 @@ metricNames = {'Accuracy','Sensitivity_WHO3','Specificity_WHO1', ...
     'PPV_WHO3','NPV_WHO1','F1_WHO3','F2_WHO3','AUC'};
 numOuterFolds = 5; numInnerFolds = 3;
 
+%% Configure parallel execution
+parEnv = get_parallel_environment_info();
+if ~isfield(cfg,'enableParallelOuterCV') || isempty(cfg.enableParallelOuterCV)
+    cfg.enableParallelOuterCV = parEnv.isAvailable;
+end
+useParallelOuter = logical(cfg.enableParallelOuterCV) && parEnv.isAvailable;
+outerLogger = create_parallel_logger(useParallelOuter);
+if useParallelOuter
+    outerLogger('Parallel outer CV enabled (Parallel Computing Toolbox detected).');
+else
+    if ~parEnv.isAvailable
+        fprintf('Parallel outer CV disabled: %s\n', parEnv.message);
+    elseif ~cfg.enableParallelOuterCV
+        fprintf('Parallel outer CV disabled via configuration flag.\n');
+    else
+        fprintf('Parallel outer CV disabled.\n');
+    end
+end
+
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
     ds = datasetsToProcess(d);
@@ -74,7 +93,7 @@ for d = 1:numel(datasetsToProcess)
 
     [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset( ...
         ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, ...
-        numInnerFolds, resultsPath, modelsPath);
+        numInnerFolds, resultsPath, modelsPath, useParallelOuter, outerLogger);
 
     dateStr = string(datetime('now','Format','yyyyMMdd'));
     if cfg.parallelOutlierComparison
@@ -151,7 +170,7 @@ function pipelines = define_pipelines()
     pidx=pidx+1; pipelines{pidx}=p;
 end
 
-function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath)
+function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, pipelines, wavenumbers_roi, metricNames, numOuterFolds, numInnerFolds, resultsPath, modelsPath, useParallelOuter, outerLogger)
 
     X = ds.X; y = ds.y; probeIDs = ds.probeIDs;
     [uniqueProbes,~,groupIdx] = unique(probeIDs,'stable');
@@ -161,28 +180,53 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
     end
 
     outerCV = cvpartition(length(uniqueProbes),'KFold',numOuterFolds);
+    trainProbeIdx = cell(numOuterFolds,1);
+    testProbeIdx = cell(numOuterFolds,1);
+    for kFold = 1:numOuterFolds
+        trainProbeIdx{kFold} = find(training(outerCV,kFold));
+        testProbeIdx{kFold}  = find(test(outerCV,kFold));
+    end
+
     resultsPerPipeline=cell(numel(pipelines),1);
     savedModels = cell(numel(pipelines),1);
 
     for iPipe=1:numel(pipelines)
         pipe=pipelines{iPipe};
-        fprintf('\nEvaluating pipeline: %s\n', pipe.name);
+        pipeName = pipe.name;
+        fprintf('\nEvaluating pipeline: %s\n', pipeName);
         outerMetrics = NaN(numOuterFolds,numel(metricNames));
         outerBestHyper=cell(numOuterFolds,1);
-        for k=1:numOuterFolds
-            trainIdx = training(outerCV,k);
-            testIdx  = test(outerCV,k);
-            trainMask = ismember(groupIdx, find(trainIdx));
-            testMask  = ismember(groupIdx, find(testIdx));
-            X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
-            X_te = X(testMask,:);  y_te = y(testMask);
-            [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
-            outerBestHyper{k}=bestHyper;
-            [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
-            [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
-            posIdx=find(finalModel.LDAModel.ClassNames==3);
-            m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
-            outerMetrics(k,:)=cell2mat(struct2cell(m))';
+
+        if useParallelOuter
+            parfor k=1:numOuterFolds
+                trainMask = ismember(groupIdx, trainProbeIdx{k});
+                testMask  = ismember(groupIdx, testProbeIdx{k});
+                X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
+                X_te = X(testMask,:);  y_te = y(testMask);
+                [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+                outerBestHyper{k}=bestHyper;
+                [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
+                [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+                posIdx=find(finalModel.LDAModel.ClassNames==3);
+                m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
+                outerMetrics(k,:)=cell2mat(struct2cell(m))';
+                outerLogger('Pipeline %s: completed outer fold %d/%d.', pipeName, k, numOuterFolds);
+            end
+        else
+            for k=1:numOuterFolds
+                trainMask = ismember(groupIdx, trainProbeIdx{k});
+                testMask  = ismember(groupIdx, testProbeIdx{k});
+                X_tr = X(trainMask,:); y_tr = y(trainMask); probes_tr = probeIDs(trainMask);
+                X_te = X(testMask,:);  y_te = y(testMask);
+                [bestHyper,~] = perform_inner_cv(X_tr,y_tr,probes_tr,pipe,wavenumbers_roi,numInnerFolds,metricNames);
+                outerBestHyper{k}=bestHyper;
+                [finalModel,~,~] = train_final_pipeline_model(X_tr,y_tr,wavenumbers_roi,pipe,bestHyper);
+                [ypred,score] = apply_model_to_data(finalModel,X_te,wavenumbers_roi);
+                posIdx=find(finalModel.LDAModel.ClassNames==3);
+                m=calculate_performance_metrics(y_te,ypred,score(:,posIdx),3,metricNames);
+                outerMetrics(k,:)=cell2mat(struct2cell(m))';
+                outerLogger('Pipeline %s: completed outer fold %d/%d.', pipeName, k, numOuterFolds);
+            end
         end
         res=struct();
         res.pipelineConfig=pipe;
