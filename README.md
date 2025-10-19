@@ -59,6 +59,7 @@ The core scripts rely on MATLAB data files stored under `data/`:
 - MATLAB R2021b or newer
 - **Statistics and Machine Learning Toolbox** (for LDA, cross-validation and `fscmrmr`)
 - **Signal Processing Toolbox** (for spectral smoothing via Savitzky–Golay filtering)
+- *Optional:* **Parallel Computing Toolbox** (to accelerate outer cross-validation loops)
 This repository includes a lightweight spider plot helper function for generating radar charts; no external downloads are required.
 
 ## Configuration helper

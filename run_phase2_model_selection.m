@@ -81,6 +81,25 @@ datasetReporter = ProgressReporter('Phase 2 datasets', numel(datasetsToProcess),
 %% Define pipelines
 pipelines = define_pipelines();
 
+%% Configure parallel execution
+parEnv = get_parallel_environment_info();
+if ~isfield(cfg,'enableParallelOuterCV') || isempty(cfg.enableParallelOuterCV)
+    cfg.enableParallelOuterCV = parEnv.isAvailable;
+end
+useParallelOuter = logical(cfg.enableParallelOuterCV) && parEnv.isAvailable;
+outerLogger = create_parallel_logger(useParallelOuter);
+if useParallelOuter
+    outerLogger('Parallel outer CV enabled (Parallel Computing Toolbox detected).');
+else
+    if ~parEnv.isAvailable
+        fprintf('Parallel outer CV disabled: %s\n', parEnv.message);
+    elseif ~cfg.enableParallelOuterCV
+        fprintf('Parallel outer CV disabled via configuration flag.\n');
+    else
+        fprintf('Parallel outer CV disabled.\n');
+    end
+end
+
 %% Run model selection for each dataset variant
 for d = 1:numel(datasetsToProcess)
     ds = datasetsToProcess(d);
@@ -212,6 +231,13 @@ function [resultsPerPipeline, savedModels] = perform_nested_cv_for_dataset(ds, p
     end
 
     outerCV = cvpartition(length(uniqueProbes),'KFold',numOuterFolds);
+    trainProbeIdx = cell(numOuterFolds,1);
+    testProbeIdx = cell(numOuterFolds,1);
+    for kFold = 1:numOuterFolds
+        trainProbeIdx{kFold} = find(training(outerCV,kFold));
+        testProbeIdx{kFold}  = find(test(outerCV,kFold));
+    end
+
     resultsPerPipeline=cell(numel(pipelines),1);
     savedModels = cell(numel(pipelines),1);
 
