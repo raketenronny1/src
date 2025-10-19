@@ -1,0 +1,16 @@
+# Default configuration for the meningioma FT-IR project
+projectRoot: .
+paths:
+  dataDir: data
+  resultsDir: results
+  modelsDir: models
+  figuresDir: figures
+analysis:
+  useOutlierRemoval: true
+  parallelOutlierComparison: true
+  outlierAlpha: 0.01
+  outlierVarianceToModel: 0.95
+exports:
+  phase2ResultsFile: ''
+  phase3ResultsFile: ''
+  exportRoot: ''
