@@ -230,8 +230,9 @@ function [bestHyperparams, bestOverallPerfMetrics] = perform_inner_cv(...
                                 end
                             end
                         catch ME_mrmr_inner
-                             fprintf('ERROR MRMR (perform_inner_cv): %s. Using all %d features for this fold.\n', ME_mrmr_inner.message, size(X_train_p,2)); 
-                             selectedFcIdx_in_current_w = 1:size(X_train_p,2); 
+                            log_message('warning', 'MRMR feature selection failed: %s. Using all %d features for this fold.', ...
+                                ME_mrmr_inner.message, size(X_train_p,2));
+                            selectedFcIdx_in_current_w = 1:size(X_train_p,2);
                         end
                     end
             end

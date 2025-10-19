@@ -106,7 +106,7 @@ function metrics = calculate_performance_metrics(y_true, y_pred, y_scores_positi
                 [~,~,~,AUC_val] = perfcurve(y_true_logical_for_auc, y_scores_positive_class, true); % 'true' is the positive class indicator in logical array
                 metrics.AUC = AUC_val;
             catch ME_auc
-                fprintf('Warning: Could not calculate AUC: %s. Setting AUC to NaN.\n', ME_auc.message);
+                log_message('warning', 'Could not calculate AUC: %s. Setting AUC to NaN.', ME_auc.message);
                 metrics.AUC = NaN;
             end
         else
