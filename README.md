@@ -179,8 +179,18 @@ Reusable helper functions in `helper_functions/` include:
 [specB, wnB] = bin_spectra(rawSpec, wn, 5);           % Spectral binning
 FR = calculate_fisher_ratio(specB, labels);           % Feature ranking
 M = calculate_performance_metrics(yTrue, yPred, scores(:,2), 3, {'Accuracy','AUC'});
-[bestParams, perf] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
+[bestParams, perf, diag] = perform_inner_cv(Xtrain, ytrain, probeIDs, config, wn, 5, {'F2_WHO3','Accuracy'});
 ```
 
 These routines can be incorporated in custom scripts or the provided pipeline.
+
+## Testing
+
+Run the MATLAB test suite from the repository root to execute the helper function unit tests:
+
+```matlab
+runtests('tests')
+```
+
+The command automatically discovers the test class in `tests/` and exercises the spectral binning and Fisher ratio utilities. The GitHub Actions workflow (`.github/workflows/matlab-tests.yml`) runs the same command on every push and pull request.
 

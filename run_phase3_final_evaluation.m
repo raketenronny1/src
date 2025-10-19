@@ -11,9 +11,14 @@ function run_phase3_final_evaluation(cfg)
 if nargin < 1
     cfg = struct();
 end
-if ~isfield(cfg,'projectRoot'); cfg.projectRoot = pwd; end
-if ~isfield(cfg,'outlierAlpha'); cfg.outlierAlpha = 0.01; end
-if ~isfield(cfg,'outlierVarianceToModel'); cfg.outlierVarianceToModel = 0.95; end
+
+helperPath = fullfile(fileparts(mfilename('fullpath')), 'helper_functions');
+if exist('configure_cfg','file') ~= 2 && isfolder(helperPath)
+    addpath(helperPath);
+end
+
+cfg = configure_cfg(cfg);
+cfg = validate_configuration(cfg);
 
 P = setup_project_paths(cfg.projectRoot,'Phase3');
 resultsPath = P.resultsPath;
