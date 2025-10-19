@@ -325,8 +325,7 @@ cleaner = onCleanup(@() fclose(fid));
 fprintf(fid, '%s', jsonText);
 clear cleaner;
 
-fprintf('Exports written to %s
-', exportRoot);
+fprintf('Exports written to %s', exportRoot);
 
 end
 
