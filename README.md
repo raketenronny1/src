@@ -153,7 +153,7 @@ run('src/data_management/export_phase_results_to_csv_json.m')
 
 The helper inspects the latest Phase 2 and Phase 3 result files (or accepts
 explicit paths via the optional configuration struct) and writes the following
-exports under `results/`:
+exports under `results/Exports/`:
 
 - `phase2_pipeline_leaderboard.csv` – mean cross-validation metrics and
   hyperparameter summaries for every trained pipeline.
